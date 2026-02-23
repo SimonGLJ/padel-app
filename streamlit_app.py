@@ -44,7 +44,12 @@ tab1, tab2, tab3 = st.tabs(["🎾 Aktuel Runde", "📊 Stilling", "🏢 Bane Nav
 with tab3:
     st.subheader("Navngiv dine baner")
     for i in range(num_courts):
-        st.session_state.court_names[i] = st.text_input(f"Bane {i+1}", value=st.session_state.court_names.get(i, f"Bane {i+1}"), key=f"setup_court_{i}")
+        court_key = i
+        st.session_state.court_names[court_key] = st.text_input(
+            f"Bane {i+1}", 
+            value=st.session_state.court_names.get(court_key, f"Bane {i+1}"), 
+            key=f"setup_court_{i}"
+        )
 
 with tab1:
     if not st.session_state.players:
@@ -54,7 +59,7 @@ with tab1:
         is_after_final = st.session_state.round_number > 8
         
         if is_after_final:
-            st.success("Turneringen er slut! Se resultaterne under 'Stilling'.")
+            st.success("Turneringen er slut!")
         else:
             status_text = "🏆 FINALERUNDE (1&4 vs 2&3)" if is_final_round else f"Runde {st.session_state.round_number} af 7"
             st.subheader(status_text)
@@ -63,23 +68,32 @@ with tab1:
                 if st.button("🎲 Generer Baner"):
                     new_matches = []
                     
-                    # Lav rangliste-liste her
-                    df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
-                    df_rank = df_rank.sort_values(by=["Point", "V", "Diff"], ascending=False)
-                    ranked_list = df_rank.index.tolist()
+                    # 1. Hent den aktuelle rangliste som en sorteret liste af navne
+                    df_current = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+                    df_current = df_current.sort_values(by=["Point", "V", "Diff"], ascending=False)
+                    ranked_players = df_current.index.tolist()
 
+                    # 2. Generer kampe for hver bane
                     for i in range(num_courts):
-                        # FINALE-LOGIK (ELLER MEXICANO EFTER RUNDE 1)
+                        # FINALE ELLER MEXICANO LOGIK
                         if is_final_round or (game_format == "Mexicano" and st.session_state.round_number > 1):
-                            # Her parres 1&4 mod 2&3 for hver blok af 4 spillere
-                            p = ranked_list[i*4 : (i*4)+4]
-                            h1 = [p[0], p[3]] # Nr 1 og 4 i den aktuelle blok
-                            h2 = [p[1], p[2]] # Nr 2 og 3 i den aktuelle blok
+                            # Vi tager spillerne 4 af gangen fra ranglisten
+                            # i=0 (Bane 1): Plads 1,2,3,4 (index 0,1,2,3)
+                            # i=1 (Bane 2): Plads 5,6,7,8 (index 4,5,6,7)
+                            idx = i * 4
+                            p1 = ranked_players[idx]     # Bedste i gruppen
+                            p2 = ranked_players[idx + 1] # Næstbedste
+                            p3 = ranked_players[idx + 2] # Tredjebedste
+                            p4 = ranked_players[idx + 3] # Fjerdebedste
+                            
+                            h1 = [p1, p4] # 1 & 4
+                            h2 = [p2, p3] # 2 & 3
+                        
                         else:
-                            # AMERICANO / RUNDE 1: Tilfældig lodtrækning
-                            temp_p = st.session_state.players.copy() if st.session_state.round_number == 1 else ranked_list.copy()
-                            random.shuffle(temp_p)
-                            p = temp_p[i*4 : (i*4)+4]
+                            # AMERICANO / RUNDE 1: Tilfældig
+                            if i == 0: # Bland kun én gang pr. runde
+                                random.shuffle(st.session_state.players)
+                            p = st.session_state.players[i*4 : (i*4)+4]
                             h1, h2 = [p[0], p[1]], [p[2], p[3]]
                         
                         new_matches.append({
@@ -92,24 +106,24 @@ with tab1:
             # VIS KAMPE
             for i, m in enumerate(st.session_state.matches):
                 with st.container(border=True):
-                    # Tilføj guld/sølv/bronze tekst i finalen
-                    finale_label = ""
+                    finale_type = ""
                     if is_final_round:
-                        if i == 0: finale_label = "🥇 GULDFINALE"
-                        elif i == 1: finale_label = "🥈 SØLVFINALE"
-                        elif i == 2: finale_label = "🥉 BRONZEFINALE"
+                        types = ["🥇 GULDFINALE (Plads 1-4)", "🥈 SØLVFINALE (Plads 5-8)", "🥉 BRONZEFINALE (Plads 9-12)"]
+                        finale_type = types[i] if i < len(types) else f"Finale (Plads {i*4+1}-{i*4+4})"
                     
-                    st.markdown(f"### {m['Bane']} {finale_label}")
-                    col1, col2 = st.columns(2)
+                    st.markdown(f"### {m['Bane']} {finale_type}")
+                    c1, c2 = st.columns(2)
                     
-                    s1 = col1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
+                    # Score input
+                    s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
                     s2 = 32 - s1
-                    col2.markdown(f"<div style='margin-top:35px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
-                    col2.info(f"Point: {s2}")
+                    c2.markdown(f"<div style='margin-top:25px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
+                    c2.info(f"Point: {s2}")
+                    
                     m['S1'], m['S2'] = s1, s2
 
             if st.session_state.matches:
-                if st.button("✅ GEM OG AFSLUT RUNDE"):
+                if st.button("✅ GEM RUNDE"):
                     for m in st.session_state.matches:
                         sa, sb = m["S1"], m["S2"]
                         res_a = "V" if sa > sb else ("T" if sa < sb else "U")
@@ -132,7 +146,12 @@ with tab2:
         st.subheader("Rangliste")
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
         df = df.sort_values(by=["Point", "V", "Diff"], ascending=False)
-        st.table(df)
+        # Vis placering (1, 2, 3...) i stedet for 0-index
+        df.index.name = "Spiller"
+        display_df = df.reset_index()
+        display_df.index = display_df.index + 1
+        st.table(display_df)
+        
         if st.session_state.round_number > 8:
             st.balloons()
-            st.success(f"Turneringen er slut! Vinderen er: {df.index[0]}")
+            st.success(f"Vinderen er: {display_df.iloc[0]['Spiller']}! 🏆")
