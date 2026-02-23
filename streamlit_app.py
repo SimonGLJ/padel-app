@@ -51,7 +51,6 @@ with tab3:
         st.info("Indtast spillere først for at se baner.")
     else:
         for i in range(num_courts):
-            # Gemmer banenavne i session_state så de huskes
             st.session_state.court_names[i] = st.text_input(
                 f"Bane {i+1}", 
                 value=st.session_state.court_names.get(i, f"Bane {i+1}"),
@@ -62,24 +61,35 @@ with tab1:
     if not st.session_state.players:
         st.info("👈 Indtast spillere til venstre for at starte.")
     else:
-        status_text = "🏆 FINALERUNDE" if st.session_state.round_number > 7 else f"Runde {st.session_state.round_number}"
+        is_final_round = st.session_state.round_number > 7
+        status_text = "🏆 FINALERUNDE (1&4 vs 2&3)" if is_final_round else f"Runde {st.session_state.round_number}"
         st.subheader(status_text)
 
         if not st.session_state.matches:
-            if st.button("🎲 Generer Næste Runde"):
+            if st.button("🎲 Generer Baner"):
                 new_matches = []
-                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(by=["Point", "V"], ascending=False)
-                plist = df_rank.index.tolist()
+                # Hent aktuel rangliste
+                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+                df_rank = df_rank.sort_values(by=["Point", "V", "Diff"], ascending=False)
+                ranked_players = df_rank.index.tolist()
                 
-                # Generer logik
+                # Hvis vi ikke har spillet endnu eller kører tilfældig Americano i runde 1-7
                 temp_p = st.session_state.players.copy()
-                if not (st.session_state.round_number > 7 or (game_format == "Mexicano" and st.session_state.round_number > 1)):
+                if not is_final_round and game_format == "Americano":
                     random.shuffle(temp_p)
 
                 for i in range(num_courts):
-                    if st.session_state.round_number > 7 or (game_format == "Mexicano" and st.session_state.round_number > 1):
-                        p = plist[i*4 : (i*4)+4]
+                    # FINALE LOGIK: 1&4 mod 2&3, 5&8 mod 6&7...
+                    if is_final_round:
+                        p = ranked_players[i*4 : (i*4)+4]
                         h1, h2 = [p[0], p[3]], [p[1], p[2]]
+                    
+                    # MEXICANO LOGIK (styrkebaseret runde 2-7)
+                    elif game_format == "Mexicano" and st.session_state.round_number > 1:
+                        p = ranked_players[i*4 : (i*4)+4]
+                        h1, h2 = [p[0], p[3]], [p[1], p[2]]
+                        
+                    # STANDARD AMERICANO / RUNDE 1
                     else:
                         p = temp_p[i*4 : (i*4)+4]
                         h1, h2 = [p[0], p[1]], [p[2], p[3]]
@@ -104,7 +114,8 @@ with tab1:
                 m['S1'], m['S2'] = s1, s2
 
         if st.session_state.matches:
-            if st.button("✅ GEM RUNDE"):
+            btn_label = "🏆 AFSLUT FINALE & SE VINDER" if is_final_round else "✅ GEM RUNDE & NÆSTE"
+            if st.button(btn_label):
                 for m in st.session_state.matches:
                     sa, sb = m["S1"], m["S2"]
                     res_a = "V" if sa > sb else ("T" if sa < sb else "U")
@@ -117,12 +128,17 @@ with tab1:
                         st.session_state.leaderboard[p][res_b] += 1
                         st.session_state.leaderboard[p]["Point"] += sb
                         st.session_state.leaderboard[p]["Diff"] += (sb - sa)
+                
                 st.session_state.round_number += 1
                 st.session_state.matches = []
                 st.rerun()
 
 with tab2:
     if st.session_state.leaderboard:
+        st.subheader("Rangliste")
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
         df = df.sort_values(by=["Point", "V", "Diff"], ascending=False)
         st.table(df)
+        if st.session_state.round_number > 8:
+            st.balloons()
+            st.success(f"Turneringen er slut! Vinderen er: {df.index[0]}")
