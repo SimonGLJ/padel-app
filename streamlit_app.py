@@ -7,6 +7,8 @@ st.set_page_config(page_title="Padel Master 32", layout="wide")
 # --- INITIALISERING ---
 if 'players' not in st.session_state:
     st.session_state.players = []
+if 'fixed_teams' not in st.session_state:
+    st.session_state.fixed_teams = []
 if 'matches' not in st.session_state:
     st.session_state.matches = []
 if 'leaderboard' not in st.session_state:
@@ -27,11 +29,12 @@ player_input = st.sidebar.text_area("Deltagere (ét navn pr. linje)", height=200
 if st.sidebar.button("🚀 Start / Nulstil Turnering"):
     names = [n.strip() for n in player_input.split('\n') if n.strip()]
     if len(names) < 4 or len(names) % 4 != 0:
-        st.sidebar.error("Antal spillere skal gå op i 4 (f.eks. 8, 12, 16, 20, 24).")
+        st.sidebar.error("Antal skal gå op i 4 (f.eks. 8, 12, 16, 20, 24).")
     else:
         st.session_state.players = names
         st.session_state.leaderboard = {n: {"V": 0, "U": 0, "T": 0, "Point": 0, "Diff": 0} for n in names}
         st.session_state.matches = []
+        st.session_state.fixed_teams = [] # Nulstil faste hold
         st.session_state.round_number = 1
         st.sidebar.success(f"Startet med {len(names)} spillere!")
 
@@ -44,114 +47,108 @@ tab1, tab2, tab3 = st.tabs(["🎾 Aktuel Runde", "📊 Stilling", "🏢 Bane Nav
 with tab3:
     st.subheader("Navngiv dine baner")
     for i in range(num_courts):
-        court_key = i
-        st.session_state.court_names[court_key] = st.text_input(
-            f"Bane {i+1}", 
-            value=st.session_state.court_names.get(court_key, f"Bane {i+1}"), 
-            key=f"setup_court_{i}"
-        )
+        st.session_state.court_names[i] = st.text_input(f"Bane {i+1}", value=st.session_state.court_names.get(i, f"Bane {i+1}"), key=f"setup_court_{i}")
 
 with tab1:
     if not st.session_state.players:
         st.info("👈 Indtast spillere til venstre for at starte.")
     else:
         is_final_round = st.session_state.round_number == 8
-        is_after_final = st.session_state.round_number > 8
-        
-        if is_after_final:
-            st.success("Turneringen er slut!")
-        else:
-            status_text = "🏆 FINALERUNDE (1&4 vs 2&3)" if is_final_round else f"Runde {st.session_state.round_number} af 7"
-            st.subheader(status_text)
+        status_text = "🏆 FINALERUNDE (1&4 vs 2&3)" if is_final_round else f"Runde {st.session_state.round_number} af 7"
+        st.subheader(status_text)
 
-            if not st.session_state.matches:
-                if st.button("🎲 Generer Baner"):
-                    new_matches = []
-                    
-                    # 1. Hent den aktuelle rangliste som en sorteret liste af navne
-                    df_current = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
-                    df_current = df_current.sort_values(by=["Point", "V", "Diff"], ascending=False)
-                    ranked_players = df_current.index.tolist()
+        if not st.session_state.matches:
+            if st.button("🎲 Generer Baner"):
+                # 1. HÅNDTERING AF FASTE HOLD I RUNDE 1
+                if partner_type == "Faste hold" and not st.session_state.fixed_teams:
+                    temp_names = st.session_state.players.copy()
+                    random.shuffle(temp_names)
+                    # Dan par 2 og 2
+                    st.session_state.fixed_teams = [[temp_names[i], temp_names[i+1]] for i in range(0, len(temp_names), 2)]
+                    st.toast("Faste hold er nu dannet ved lodtrækning!")
 
-                    # 2. Generer kampe for hver bane
-                    for i in range(num_courts):
-                        # FINALE ELLER MEXICANO LOGIK
-                        if is_final_round or (game_format == "Mexicano" and st.session_state.round_number > 1):
-                            # Vi tager spillerne 4 af gangen fra ranglisten
-                            # i=0 (Bane 1): Plads 1,2,3,4 (index 0,1,2,3)
-                            # i=1 (Bane 2): Plads 5,6,7,8 (index 4,5,6,7)
-                            idx = i * 4
-                            p1 = ranked_players[idx]     # Bedste i gruppen
-                            p2 = ranked_players[idx + 1] # Næstbedste
-                            p3 = ranked_players[idx + 2] # Tredjebedste
-                            p4 = ranked_players[idx + 3] # Fjerdebedste
-                            
-                            h1 = [p1, p4] # 1 & 4
-                            h2 = [p2, p3] # 2 & 3
-                        
+                # 2. HENT RANGERET LISTE (Individuel eller Hold-baseret)
+                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+                df_rank = df_rank.sort_values(by=["Point", "V", "Diff"], ascending=False)
+                ranked_players = df_rank.index.tolist()
+
+                new_matches = []
+                
+                # 3. GENERER KAMPE
+                for i in range(num_courts):
+                    # FINALE ELLER MEXICANO
+                    if is_final_round or (game_format == "Mexicano" and st.session_state.round_number > 1):
+                        if partner_type == "Skiftende makker":
+                            p = ranked_players[i*4 : (i*4)+4]
+                            h1, h2 = [p[0], p[3]], [p[1], p[2]]
                         else:
-                            # AMERICANO / RUNDE 1: Tilfældig
-                            if i == 0: # Bland kun én gang pr. runde
-                                random.shuffle(st.session_state.players)
-                            p = st.session_state.players[i*4 : (i*4)+4]
+                            # Faste hold baseret på rangliste (Bedste hold vs 4. bedste hold)
+                            # Find holdene hvor den bedste spiller i hver blok er med
+                            p = ranked_players[i*4 : (i*4)+4]
+                            # Find de 4 hold som disse 4 spillere tilhører
+                            current_teams = []
+                            seen_teams = []
+                            for player in ranked_players:
+                                for team in st.session_state.fixed_teams:
+                                    if player in team and team not in seen_teams:
+                                        seen_teams.append(team)
+                            
+                            # Tag de 4 bedste hold til denne bane
+                            t = seen_teams[i*2 : (i*2)+2]
+                            h1, h2 = t[0], t[1]
+                    
+                    # RUNDE 1 ELLER AMERICANO
+                    else:
+                        if partner_type == "Skiftende makker":
+                            temp_p = st.session_state.players.copy()
+                            if st.session_state.round_number == 1: random.shuffle(temp_p)
+                            p = temp_p[i*4 : (i*4)+4]
                             h1, h2 = [p[0], p[1]], [p[2], p[3]]
-                        
-                        new_matches.append({
-                            "Bane": st.session_state.court_names.get(i, f"Bane {i+1}"),
-                            "H1": h1, "H2": h2, "S1": 16, "S2": 16
-                        })
-                    st.session_state.matches = new_matches
-                    st.rerun()
+                        else:
+                            # Faste hold lodtrækning/tilfældig bane
+                            temp_teams = st.session_state.fixed_teams.copy()
+                            if st.session_state.round_number == 1: random.shuffle(temp_teams)
+                            t = temp_teams[i*2 : (i*2)+2]
+                            h1, h2 = t[0], t[1]
+                    
+                    new_matches.append({
+                        "Bane": st.session_state.court_names.get(i, f"Bane {i+1}"),
+                        "H1": h1, "H2": h2, "S1": 16, "S2": 16
+                    })
+                st.session_state.matches = new_matches
+                st.rerun()
 
-            # VIS KAMPE
-            for i, m in enumerate(st.session_state.matches):
-                with st.container(border=True):
-                    finale_type = ""
-                    if is_final_round:
-                        types = ["🥇 GULDFINALE (Plads 1-4)", "🥈 SØLVFINALE (Plads 5-8)", "🥉 BRONZEFINALE (Plads 9-12)"]
-                        finale_type = types[i] if i < len(types) else f"Finale (Plads {i*4+1}-{i*4+4})"
-                    
-                    st.markdown(f"### {m['Bane']} {finale_type}")
-                    c1, c2 = st.columns(2)
-                    
-                    # Score input
-                    s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
-                    s2 = 32 - s1
-                    c2.markdown(f"<div style='margin-top:25px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
-                    c2.info(f"Point: {s2}")
-                    
-                    m['S1'], m['S2'] = s1, s2
+        # VIS KAMPE
+        for i, m in enumerate(st.session_state.matches):
+            with st.container(border=True):
+                st.write(f"📍 **{m['Bane']}**")
+                c1, c2 = st.columns(2)
+                s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
+                s2 = 32 - s1
+                c2.markdown(f"<div style='margin-top:25px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
+                c2.info(f"Point: {s2}")
+                m['S1'], m['S2'] = s1, s2
 
-            if st.session_state.matches:
-                if st.button("✅ GEM RUNDE"):
-                    for m in st.session_state.matches:
-                        sa, sb = m["S1"], m["S2"]
-                        res_a = "V" if sa > sb else ("T" if sa < sb else "U")
-                        res_b = "V" if sb > sa else ("T" if sb < sa else "U")
-                        for p in m["H1"]:
-                            st.session_state.leaderboard[p][res_a] += 1
-                            st.session_state.leaderboard[p]["Point"] += sa
-                            st.session_state.leaderboard[p]["Diff"] += (sa - sb)
-                        for p in m["H2"]:
-                            st.session_state.leaderboard[p][res_b] += 1
-                            st.session_state.leaderboard[p]["Point"] += sb
-                            st.session_state.leaderboard[p]["Diff"] += (sb - sa)
-                    
-                    st.session_state.round_number += 1
-                    st.session_state.matches = []
-                    st.rerun()
+        if st.session_state.matches:
+            if st.button("✅ GEM RUNDE"):
+                for m in st.session_state.matches:
+                    sa, sb = m["S1"], m["S2"]
+                    res_a = "V" if sa > sb else ("T" if sa < sb else "U")
+                    res_b = "V" if sb > sa else ("T" if sb < sa else "U")
+                    for p in m["H1"]:
+                        st.session_state.leaderboard[p][res_a] += 1
+                        st.session_state.leaderboard[p]["Point"] += sa
+                        st.session_state.leaderboard[p]["Diff"] += (sa - sb)
+                    for p in m["H2"]:
+                        st.session_state.leaderboard[p][res_b] += 1
+                        st.session_state.leaderboard[p]["Point"] += sb
+                        st.session_state.leaderboard[p]["Diff"] += (sb - sa)
+                st.session_state.round_number += 1
+                st.session_state.matches = []
+                st.rerun()
 
 with tab2:
     if st.session_state.leaderboard:
-        st.subheader("Rangliste")
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
         df = df.sort_values(by=["Point", "V", "Diff"], ascending=False)
-        # Vis placering (1, 2, 3...) i stedet for 0-index
-        df.index.name = "Spiller"
-        display_df = df.reset_index()
-        display_df.index = display_df.index + 1
-        st.table(display_df)
-        
-        if st.session_state.round_number > 8:
-            st.balloons()
-            st.success(f"Vinderen er: {display_df.iloc[0]['Spiller']}! 🏆")
+        st.table(df.reset_index().rename(columns={'index': 'Spiller'}))
