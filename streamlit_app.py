@@ -49,6 +49,7 @@ if st.sidebar.button("🚀 START TURNERING / NULSTIL"):
         st.session_state.fixed_teams = []
         st.session_state.round_number = 1
         st.sidebar.success("Turnering klar!")
+        st.rerun()
 
 # --- FANER ---
 tab1, tab2 = st.tabs(["🎾 Aktuel Runde", "📊 Stilling"])
@@ -63,13 +64,13 @@ with tab1:
 
         if not st.session_state.matches:
             if st.button("🎲 Start ny runde"):
-                # 1. GENERER FASTE HOLD HVIS DET ER RUNDE 1
+                # A. GENERER FASTE HOLD (KUN EN GANG VED START)
                 if partner_type == "Faste hold" and not st.session_state.fixed_teams:
-                    temp_names = st.session_state.players.copy()
-                    random.shuffle(temp_names)
-                    st.session_state.fixed_teams = [temp_names[i:i+2] for i in range(0, len(temp_names), 2)]
+                    temp_p = st.session_state.players.copy()
+                    random.shuffle(temp_p)
+                    st.session_state.fixed_teams = [temp_p[i:i+2] for i in range(0, len(temp_p), 2)]
 
-                # 2. HENT RANGERET LISTE
+                # B. HENT RANGERET LISTE
                 df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
                 df_rank = df_rank.sort_values(by=["Point", "V", "Diff"], ascending=False)
                 ranked_players = df_rank.index.tolist()
@@ -77,25 +78,23 @@ with tab1:
                 new_matches = []
                 num_courts = len(st.session_state.players) // 4
                 
-                # 3. GENERER KAMPE
+                # C. GENERER KAMPE BASERET PÅ FORMAT
                 if is_final_round or (game_format == "Mexicano" and st.session_state.round_number > 1):
-                    # STYRKEBASERET (MEXICANO / FINALE)
+                    # MEXICANO / FINALE LOGIK
                     if partner_type == "Skiftende makker":
                         for i in range(num_courts):
                             p = ranked_players[i*4 : (i*4)+4]
                             new_matches.append({"Bane": st.session_state.court_names.get(i, f"Bane {i+1}"), "H1": [p[0], p[3]], "H2": [p[1], p[2]], "S1": 16, "S2": 16})
                     else:
-                        # Faste hold rangeret efter bedste spiller på holdet
-                        seen_teams = []
-                        for p in ranked_players:
-                            for team in st.session_state.fixed_teams:
-                                if p in team and team not in seen_teams:
-                                    seen_teams.append(team)
+                        # Find hold baseret på gennemsnitlige point eller bedste spiller
+                        teams_to_assign = st.session_state.fixed_teams.copy()
+                        # Sortér holdene efter det gennemsnitlige pointtal for de to spillere
+                        teams_to_assign.sort(key=lambda t: (st.session_state.leaderboard[t[0]]["Point"] + st.session_state.leaderboard[t[1]]["Point"]), reverse=True)
                         for i in range(num_courts):
-                            t1, t2 = seen_teams[i*2], seen_teams[i*2+1]
+                            t1, t2 = teams_to_assign[i*2], teams_to_assign[i*2+1]
                             new_matches.append({"Bane": st.session_state.court_names.get(i, f"Bane {i+1}"), "H1": t1, "H2": t2, "S1": 16, "S2": 16})
                 else:
-                    # TILFÆLDIG (AMERICANO / RUNDE 1)
+                    # AMERICANO / RUNDE 1 LOGIK (TILFÆLDIG)
                     if partner_type == "Skiftende makker":
                         temp_p = st.session_state.players.copy()
                         random.shuffle(temp_p)
@@ -112,42 +111,39 @@ with tab1:
                 st.session_state.matches = new_matches
                 st.rerun()
 
-            # VIS KAMPE
-            for i, m in enumerate(st.session_state.matches):
-                with st.container(border=True):
-                    # Vinderbane tekst kun i Mexicano eller Finale
-                    show_vinder = (i == 0 and (game_format == "Mexicano" or is_final_round))
-                    header = f"### {'🔝 VINDERBANE: ' if show_vinder else ''}{m['Bane']}"
-                    st.markdown(header)
-                    
-                    c1, c2 = st.columns(2)
-                    s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
-                    s2 = 32 - s1
-                    c2.markdown(f"<div style='margin-top:25px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
-                    c2.info(f"Point: {s2}")
-                    m['S1'], m['S2'] = s1, s2
+        # D. VIS KAMPE
+        for i, m in enumerate(st.session_state.matches):
+            with st.container(border=True):
+                show_vinder = (i == 0 and (game_format == "Mexicano" or is_final_round))
+                header = f"### {'🔝 VINDERBANE: ' if show_vinder else ''}{m['Bane']}"
+                st.markdown(header)
+                
+                c1, c2 = st.columns(2)
+                s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=m['S1'], key=f"r{st.session_state.round_number}_m{i}_s1")
+                s2 = 32 - s1
+                c2.markdown(f"<div style='margin-top:25px;'><b>{' & '.join(m['H2'])}</b></div>", unsafe_allow_html=True)
+                c2.info(f"Point: {s2}")
+                m['S1'], m['S2'] = s1, s2
 
-            if st.session_state.matches:
-                if st.button("✅ GEM RESULTATER"):
-                    for m in st.session_state.matches:
-                        sa, sb = m["S1"], m["S2"]
-                        res1 = "V" if sa > sb else ("T" if sa < sb else "U")
-                        res2 = "V" if sb > sa else ("T" if sb < sa else "U")
-                        # Opdater alle spillere individuelt
-                        for p in m["H1"]:
-                            st.session_state.leaderboard[p]["Kampe"] += 1
-                            st.session_state.leaderboard[p][res1] += 1
-                            st.session_state.leaderboard[p]["Point"] += sa
-                            st.session_state.leaderboard[p]["Diff"] += (sa - sb)
-                        for p in m["H2"]:
-                            st.session_state.leaderboard[p]["Kampe"] += 1
-                            st.session_state.leaderboard[p][res2] += 1
-                            st.session_state.leaderboard[p]["Point"] += sb
-                            st.session_state.leaderboard[p]["Diff"] += (sb - sa)
-                    
-                    st.session_state.round_number += 1
-                    st.session_state.matches = []
-                    st.rerun()
+        if st.session_state.matches:
+            if st.button("✅ GEM RESULTATER"):
+                for m in st.session_state.matches:
+                    sa, sb = m["S1"], m["S2"]
+                    res1 = "V" if sa > sb else ("T" if sa < sb else "U")
+                    res2 = "V" if sb > sa else ("T" if sb < sa else "U")
+                    for p in m["H1"]:
+                        st.session_state.leaderboard[p]["Kampe"] += 1
+                        st.session_state.leaderboard[p][res1] += 1
+                        st.session_state.leaderboard[p]["Point"] += sa
+                        st.session_state.leaderboard[p]["Diff"] += (sa - sb)
+                    for p in m["H2"]:
+                        st.session_state.leaderboard[p]["Kampe"] += 1
+                        st.session_state.leaderboard[p][res2] += 1
+                        st.session_state.leaderboard[p]["Point"] += sb
+                        st.session_state.leaderboard[p]["Diff"] += (sb - sa)
+                st.session_state.round_number += 1
+                st.session_state.matches = []
+                st.rerun()
 
 with tab2:
     if st.session_state.leaderboard:
