@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Master Pro", layout="wide")
+st.set_page_config(page_title="Padel Master Pro", layout="wide", page_icon="🎾")
 
 # --- 1. DATABASE FORBINDELSE ---
 conn = st.connection("supabase", type=SupabaseConnection)
@@ -12,8 +12,7 @@ def load_from_supabase(tid):
     try:
         res = conn.table("tournaments").select("*").eq("tournament_id", tid).execute()
         return res.data[0] if res.data and len(res.data) > 0 else None
-    except Exception as e:
-        st.error(f"Database-læsefejl: {e}")
+    except Exception:
         return None
 
 def save_to_supabase(tid, round_num, leaderboard, matches, players, fixed_teams, history):
@@ -24,24 +23,24 @@ def save_to_supabase(tid, round_num, leaderboard, matches, players, fixed_teams,
         "matches": matches,
         "players": players,
         "fixed_teams": fixed_teams,
-        "history": history # Vi gemmer nu også historikken
+        "history": history
     }
     try:
         conn.table("tournaments").upsert(data).execute()
-        st.toast(f"☁️ Data synkroniseret: {tid}")
+        st.toast(f"☁️ Synkroniseret: {tid}")
     except Exception as e:
-        st.error(f"Database-gemmefejl: {e}")
+        st.error(f"Fejl ved gem: {e}")
 
-# --- 2. APP LOGIK START ---
+# --- 2. INITIALISERING ---
 st.title("🎾 Padel Master Pro")
 
-tid = st.text_input("Indtast Turnerings-ID", key="tid_input").strip()
+tid = st.text_input("📍 Turnerings-ID (f.eks: Fredag_Hørning)", key="tid_input").strip()
 
 if not tid:
-    st.info("👋 Indtast et Turnerings-ID for at starte.")
+    st.info("👋 Indtast et ID for at starte eller genoptage en turnering.")
     st.stop()
 
-# HENT DATA VED OPSTART
+# HENT DATA FRA SKYEN
 if "current_tid" not in st.session_state or st.session_state.current_tid != tid:
     cloud_data = load_from_supabase(tid)
     if cloud_data:
@@ -51,60 +50,59 @@ if "current_tid" not in st.session_state or st.session_state.current_tid != tid:
         st.session_state.matches = cloud_data.get('matches', [])
         st.session_state.fixed_teams = cloud_data.get('fixed_teams', [])
         st.session_state.history = cloud_data.get('history', [])
+        st.success(f"📂 Turnering '{tid}' hentet fra skyen.")
     else:
-        st.session_state.players = []
-        st.session_state.leaderboard = {}
-        st.session_state.round_number = 1
-        st.session_state.matches = []
-        st.session_state.fixed_teams = []
-        st.session_state.history = []
+        st.session_state.players, st.session_state.leaderboard = [], {}
+        st.session_state.round_number, st.session_state.matches = 1, []
+        st.session_state.fixed_teams, st.session_state.history = [], []
     st.session_state.current_tid = tid
 
-# --- 3. SIDEBAR ---
+# --- 3. SIDEBAR (SETUP) ---
 with st.sidebar:
     st.header("⚙️ Konfiguration")
-    g_format = st.selectbox("Format", ["Americano", "Mexicano"])
-    p_type = st.selectbox("Makkere", ["Skiftende makker", "Faste hold"])
-    p_text = "\n".join(st.session_state.get('players', []))
-    p_input = st.text_area("Deltagere", value=p_text, height=200)
+    g_format = st.selectbox("Spilleform", ["Americano", "Mexicano"], help="Americano er tilfældig, Mexicano er styrkebaseret.")
+    p_type = st.selectbox("Makkere", ["Skiftende makker", "Faste hold"], help="Skal man skifte makker hver runde eller spille med den samme?")
     
-    if st.button("🚀 Start / Opdater"):
+    p_text = "\n".join(st.session_state.get('players', []))
+    p_input = st.text_area("Deltagere (ét navn pr. linje)", value=p_text, height=200)
+    
+    if st.button("🚀 START / OPDATER"):
         names = [n.strip() for n in p_input.split('\n') if n.strip()]
         if len(names) % 4 == 0 and len(names) >= 4:
             st.session_state.players = names
             st.session_state.leaderboard = {n: {"Point": 0, "V": 0, "Kampe": 0} for n in names}
-            st.session_state.round_number = 1
-            st.session_state.matches = []
-            st.session_state.fixed_teams = []
-            st.session_state.history = []
+            st.session_state.round_number, st.session_state.matches, st.session_state.fixed_teams, st.session_state.history = 1, [], [], []
             save_to_supabase(tid, 1, st.session_state.leaderboard, [], names, [], [])
             st.rerun()
         else:
-            st.error("Antal skal gå op i 4!")
+            st.error("Antallet af spillere skal gå op i 4!")
 
-    if st.button("🗑️ Nulstil ID"):
+    st.divider()
+    if st.button("🗑️ Nulstil alt for dette ID"):
         save_to_supabase(tid, 1, {}, [], [], [], [])
         st.session_state.clear()
         st.rerun()
 
 # --- 4. HOVEDSKÆRM ---
-tab1, tab2, tab3 = st.tabs(["🎾 Aktuel Runde", "📊 Stilling", "📜 Log/Historik"])
+tab1, tab2, tab3 = st.tabs(["🎾 Aktuel Runde", "📊 Stilling", "📜 Log & Eksport"])
 
 with tab1:
     if not st.session_state.get('players'):
-        st.warning("Indtast spillere i siden.")
+        st.warning("👈 Indtast spillere i menuen til venstre.")
     else:
         st.subheader(f"Runde {st.session_state.round_number}")
         
+        # GENERER KAMPE
         if not st.session_state.get('matches'):
             if st.button("🎲 Generer Kampe"):
+                # Håndtering af faste hold
                 if p_type == "Faste hold" and not st.session_state.fixed_teams:
                     temp_p = st.session_state.players.copy()
                     random.shuffle(temp_p)
                     st.session_state.fixed_teams = [temp_p[i:i+2] for i in range(0, len(temp_p), 2)]
 
-                df_temp = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values("Point", ascending=False)
-                ranked = df_temp.index.tolist()
+                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values("Point", ascending=False)
+                ranked = df_rank.index.tolist()
                 num_courts = len(st.session_state.players) // 4
                 new_m = []
 
@@ -123,6 +121,7 @@ with tab1:
                                         seen.add(tuple(sorted(team)))
                             h1, h2 = assigned[i*2], assigned[i*2+1]
                     else:
+                        # Americano / Tilfældig
                         if p_type == "Skiftende makker":
                             p_pool = st.session_state.players.copy() if i == 0 else p_pool
                             random.shuffle(p_pool)
@@ -138,6 +137,7 @@ with tab1:
                 save_to_supabase(tid, st.session_state.round_number, st.session_state.leaderboard, new_m, st.session_state.players, st.session_state.fixed_teams, st.session_state.history)
                 st.rerun()
 
+        # VIS KAMPE OG INDTASTNING
         if st.session_state.get('matches'):
             for i, m in enumerate(st.session_state.matches):
                 with st.container(border=True):
@@ -146,16 +146,13 @@ with tab1:
                     s1 = c1.number_input(f"{' & '.join(m['H1'])}", 0, 32, value=int(m['S1']), key=f"s1_{i}")
                     s2 = 32 - s1
                     c2.info(f"{' & '.join(m['H2'])}: **{s2} point**")
-                    st.session_state.matches[i]['S1'] = s1
-                    st.session_state.matches[i]['S2'] = s2
+                    st.session_state.matches[i]['S1'], st.session_state.matches[i]['S2'] = s1, s2
 
-            if st.button("✅ Gem Runde"):
-                current_round_log = {"Runde": st.session_state.round_number, "Kampe": []}
+            if st.button("✅ Gem Resultater"):
+                current_log = {"Runde": st.session_state.round_number, "Kampe": []}
                 for m in st.session_state.matches:
                     s1, s2 = m['S1'], m['S2']
-                    # Log resultatet
-                    current_round_log["Kampe"].append(f"{m['Bane']}: {' & '.join(m['H1'])} ({s1}) vs {' & '.join(m['H2'])} ({s2})")
-                    # Opdater leaderboard
+                    current_log["Kampe"].append(f"{m['Bane']}: {' & '.join(m['H1'])} ({s1}) vs {' & '.join(m['H2'])} ({s2})")
                     for p in m['H1']:
                         st.session_state.leaderboard[p]["Point"] += s1
                         st.session_state.leaderboard[p]["Kampe"] += 1
@@ -165,7 +162,7 @@ with tab1:
                         st.session_state.leaderboard[p]["Kampe"] += 1
                         if s2 > s1: st.session_state.leaderboard[p]["V"] += 1
                 
-                st.session_state.history.append(current_round_log)
+                st.session_state.history.append(current_log)
                 st.session_state.round_number += 1
                 st.session_state.matches = []
                 save_to_supabase(tid, st.session_state.round_number, st.session_state.leaderboard, [], st.session_state.players, st.session_state.fixed_teams, st.session_state.history)
@@ -177,11 +174,14 @@ with tab2:
         st.table(df.sort_values(["Point", "V"], ascending=False).reset_index().rename(columns={'index': 'Spiller'}))
 
 with tab3:
-    st.subheader("📜 Historik over runder")
-    if not st.session_state.history:
-        st.write("Ingen runder er afsluttet endnu.")
-    else:
+    st.subheader("📜 Historik")
+    if st.session_state.history:
         for entry in reversed(st.session_state.history):
             with st.expander(f"Runde {entry['Runde']}"):
-                for kamp in entry['Kampe']:
-                    st.write(kamp)
+                for kamp in entry['Kampe']: st.write(kamp)
+        
+        st.divider()
+        st.subheader("📊 Eksport")
+        final_df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values("Point", ascending=False)
+        csv = final_df.to_csv().encode('utf-8')
+        st.download_button("📥 Hent resultat som CSV (Excel)", csv, f"padel_{tid}.csv", "text/csv")
