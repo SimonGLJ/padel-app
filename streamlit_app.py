@@ -60,7 +60,10 @@ with st.sidebar:
         names = [n.strip() for n in p_input.split('\n') if n.strip()]
         if len(names) % 4 == 0 and len(names) >= 4:
             st.session_state.players = names
-            st.session_state.leaderboard = {n: {"Point": 0, "V": 0, "Kampe": 0} for n in names}
+            # Nyt leaderboard med udvidet statistik
+            st.session_state.leaderboard = {
+                n: {"Point": 0, "PF": 0, "V": 0, "U": 0, "T": 0, "Kampe": 0} for n in names
+            }
             st.session_state.round_number, st.session_state.matches, st.session_state.fixed_teams, st.session_state.history = 1, [], [], []
             save_to_supabase(tid, 1, st.session_state.leaderboard, [], names, [], [])
             st.rerun()
@@ -77,28 +80,23 @@ with tab1:
         
         if not st.session_state.get('matches'):
             if st.button("🎲 Generer Kampe"):
-                # Fast hold logik
                 if p_type == "Faste hold" and not st.session_state.fixed_teams:
                     temp_p = st.session_state.players.copy()
                     random.shuffle(temp_p)
                     st.session_state.fixed_teams = [temp_p[i:i+2] for i in range(0, len(temp_p), 2)]
 
-                # Sortering til Mexicano (Baseret på point)
-                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(["Point", "V"], ascending=False)
+                # Sortering efter Point, så PF (Pointforskel), så Vundne
+                df_rank = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(["Point", "PF", "V"], ascending=False)
                 ranked = df_rank.index.tolist()
                 num_courts = len(st.session_state.players) // 4
                 new_m = []
 
                 for i in range(num_courts):
-                    # --- MEXICANO LOGIK: RYKKER OP/NED ---
                     if g_format == "Mexicano":
                         if p_type == "Skiftende makker":
-                            # Tag de 4 spillere der ligger til denne bane (0-3 for Bane 1, 4-7 for Bane 2 osv)
                             p = ranked[i*4 : (i*4)+4]
-                            # Par dem: 1&4 vs 2&3 for jævn kamp på banen
                             h1, h2 = [p[0], p[3]], [p[1], p[2]]
                         else:
-                            # Faste hold: Find de to hold der rangerer til denne bane
                             assigned_teams = []
                             seen_players = set()
                             for p in ranked:
@@ -107,8 +105,6 @@ with tab1:
                                         assigned_teams.append(team)
                                         for tp in team: seen_players.add(tp)
                             h1, h2 = assigned_teams[i*2], assigned_teams[i*2+1]
-                    
-                    # --- AMERICANO LOGIK: TILFÆLDIG ---
                     else:
                         if p_type == "Skiftende makker":
                             p_pool = st.session_state.players.copy() if i == 0 else p_pool
@@ -119,18 +115,15 @@ with tab1:
                             t_pool = st.session_state.fixed_teams.copy() if i == 0 else t_pool
                             random.shuffle(t_pool)
                             h1, h2 = t_pool.pop(), t_pool.pop()
-                    
                     new_m.append({"Bane": f"Bane {i+1}", "H1": h1, "H2": h2, "S1": 16, "S2": 16})
                 
                 st.session_state.matches = new_m
                 save_to_supabase(tid, st.session_state.round_number, st.session_state.leaderboard, new_m, st.session_state.players, st.session_state.fixed_teams, st.session_state.history)
                 st.rerun()
 
-        # VIS KAMPE
         if st.session_state.get('matches'):
             for i, m in enumerate(st.session_state.matches):
                 with st.container(border=True):
-                    # Marker Bane 1 som Vinderbane i Mexicano
                     label = f"🏆 {m['Bane']} (Vinderbane)" if m['Bane'] == "Bane 1" and g_format == "Mexicano" else m['Bane']
                     st.write(f"### {label}")
                     c1, c2 = st.columns(2)
@@ -139,19 +132,31 @@ with tab1:
                     c2.info(f"{' & '.join(m['H2'])}: **{s2} point**")
                     st.session_state.matches[i]['S1'], st.session_state.matches[i]['S2'] = s1, s2
 
-            if st.button("✅ Gem Runde"):
+            if st.button("✅ Gem Resultater"):
                 current_log = {"Runde": st.session_state.round_number, "Kampe": []}
                 for m in st.session_state.matches:
                     s1, s2 = m['S1'], m['S2']
                     current_log["Kampe"].append(f"{m['Bane']}: {' & '.join(m['H1'])} ({s1}) vs {' & '.join(m['H2'])} ({s2})")
+                    
+                    # Beregn Pointforskel for denne kamp
+                    diff1 = s1 - s2
+                    diff2 = s2 - s1
+
+                    # Opdater alle 4 spillere
                     for p in m['H1']:
                         st.session_state.leaderboard[p]["Point"] += s1
+                        st.session_state.leaderboard[p]["PF"] += diff1
                         st.session_state.leaderboard[p]["Kampe"] += 1
                         if s1 > s2: st.session_state.leaderboard[p]["V"] += 1
+                        elif s1 == s2: st.session_state.leaderboard[p]["U"] += 1
+                        else: st.session_state.leaderboard[p]["T"] += 1
                     for p in m['H2']:
                         st.session_state.leaderboard[p]["Point"] += s2
+                        st.session_state.leaderboard[p]["PF"] += diff2
                         st.session_state.leaderboard[p]["Kampe"] += 1
                         if s2 > s1: st.session_state.leaderboard[p]["V"] += 1
+                        elif s2 == s1: st.session_state.leaderboard[p]["U"] += 1
+                        else: st.session_state.leaderboard[p]["T"] += 1
                 
                 st.session_state.history.append(current_log)
                 st.session_state.round_number += 1
@@ -161,11 +166,32 @@ with tab1:
 
 with tab2:
     if st.session_state.get('leaderboard'):
+        st.subheader("🏆 Aktuel Stilling")
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
-        st.table(df.sort_values(["Point", "V"], ascending=False).reset_index().rename(columns={'index': 'Spiller'}))
+        
+        # Sorter efter Point, derefter Pointforskel (PF), derefter Vundne
+        df = df.sort_values(["Point", "PF", "V"], ascending=False)
+        
+        # Formatering af tabel
+        df_display = df.reset_index().rename(columns={
+            'index': 'Spiller', 
+            'PF': 'Pointforskel', 
+            'V': 'Vundne', 
+            'U': 'Uafgjorte', 
+            'T': 'Tabte'
+        })
+        df_display.index = df_display.index + 1 # Start ved nr. 1
+        
+        st.table(df_display)
 
 with tab3:
     st.subheader("📜 Historik & Eksport")
     for entry in reversed(st.session_state.get('history', [])):
         with st.expander(f"Runde {entry['Runde']}"):
             for kamp in entry['Kampe']: st.write(kamp)
+    
+    if st.session_state.get('leaderboard'):
+        st.divider()
+        final_df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values("Point", ascending=False)
+        csv = final_df.to_csv().encode('utf-8')
+        st.download_button("📥 Hent resultater til Excel (CSV)", csv, f"padel_{tid}.csv", "text/csv")
