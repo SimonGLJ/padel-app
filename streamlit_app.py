@@ -34,9 +34,6 @@ def save_to_supabase(tid, round_num, leaderboard, matches, players, fixed_teams,
 # --- 2. INITIALISERING ---
 st.title("🎾 Padel Master Pro")
 
-if st.button("Debug: Se hvad appen husker"):
-    st.write(st.session_state)
-
 tid = st.text_input("📍 Turnerings-ID (f.eks: Fredag_Hørning)", key="tid_input").strip()
 
 if not tid:
