@@ -77,20 +77,30 @@ with st.sidebar:
     if st.button("🚀 START / NULSTIL"):
         names = [n.strip() for n in p_input.split('\n') if n.strip()]
         if len(names) % 4 == 0 and len(names) >= 4:
+            # --- HER BLIVER HOLDENE TILFÆLDIGE ---
+            working_names = names.copy()
+            random.shuffle(working_names) # Bland listen før vi danner hold
+            
             st.session_state.update({
-                "players": names, "round_number": 1, "matches": [], "history": [],
+                "players": names, # Vi gemmer den originale liste til tekstfeltet
+                "round_number": 1, "matches": [], "history": [],
                 "leaderboard": {n: {"Point": 0, "PF": 0, "V": 0} for n in names},
                 "max_rounds": max_r
             })
+            
             if p_type == "Faste hold":
-                # Vi tager navnene to og to som de står i listen
-                st.session_state.fixed_teams = [names[i:i+2] for i in range(0, len(names), 2)]
+                # Nu dannes holdene ud fra den BLANDEDE liste
+                st.session_state.fixed_teams = [working_names[i:i+2] for i in range(0, len(working_names), 2)]
+                # Vis de genererede hold i sidebaren så man kan se dem
+                st.sidebar.info("🎲 Hold er genereret tilfældigt!")
             else:
                 st.session_state.fixed_teams = []
+                
             save_to_supabase()
             st.rerun()
+        else: st.error("Antal skal gå op i 4!")
 
-# --- 4. TABS ---
+# --- 4. TABS --- (Samme logik som v2.7 for kampgenerering)
 tab1, tab2, tab3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log & Rediger"])
 
 with tab1:
@@ -109,39 +119,27 @@ with tab1:
                     num_courts = len(st.session_state.players) // 4
                     
                     if p_type == "Faste hold":
-                        # LOGIK FOR FASTE HOLD
                         teams_pool = list(st.session_state.fixed_teams)
-                        
                         if is_finale or g_format == "Mexicano":
-                            # Sorter hold efter gennemsnitlig point
                             team_ranks = []
                             for t in teams_pool:
                                 avg_p = sum(st.session_state.leaderboard[p]["Point"] for p in t) / 2
                                 team_ranks.append((t, avg_p))
                             team_ranks.sort(key=lambda x: x[1], reverse=True)
                             sorted_teams = [x[0] for x in team_ranks]
-                            
                             for i in range(num_courts):
                                 b_navn = st.session_state.court_names[i] if i < len(st.session_state.court_names) else f"Bane {i+1}"
-                                h1 = sorted_teams[i*2]
-                                h2 = sorted_teams[i*2+1]
-                                new_m.append({"Bane": b_navn, "H1": h1, "H2": h2, "S1": 16, "S2": 16})
+                                new_m.append({"Bane": b_navn, "H1": sorted_teams[i*2], "H2": sorted_teams[i*2+1], "S1": 16, "S2": 16})
                         else:
-                            # Americano med faste hold (Tilfældig parring af hold)
                             random.shuffle(teams_pool)
                             for i in range(num_courts):
                                 b_navn = f"Bane {i+1}"
-                                h1 = teams_pool.pop()
-                                h2 = teams_pool.pop()
-                                new_m.append({"Bane": b_navn, "H1": h1, "H2": h2, "S1": 16, "S2": 16})
-                    
+                                new_m.append({"Bane": b_navn, "H1": teams_pool.pop(), "H2": teams_pool.pop(), "S1": 16, "S2": 16})
                     else:
-                        # LOGIK FOR SKIFTENDE MAKKERE (Samme som v2.6)
                         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(["Point", "PF", "V"], ascending=False)
                         ranked = df.index.tolist()
                         player_pool = st.session_state.players.copy()
                         random.shuffle(player_pool)
-                        
                         for i in range(num_courts):
                             b_navn = st.session_state.court_names[i] if i < len(st.session_state.court_names) else f"Bane {i+1}"
                             if is_finale or g_format == "Mexicano":
@@ -151,12 +149,9 @@ with tab1:
                                 p = [player_pool.pop() for _ in range(4)]
                                 h1, h2 = [p[0], p[1]], [p[2], p[3]]
                             new_m.append({"Bane": b_navn, "H1": h1, "H2": h2, "S1": 16, "S2": 16})
-                    
                     st.session_state.matches = new_m
-                    save_to_supabase()
-                    st.rerun()
+                    save_to_supabase(); st.rerun()
 
-            # Display Kampe
             for i, m in enumerate(st.session_state.matches):
                 with st.container(border=True):
                     st.write(f"### {m['Bane']}")
