@@ -17,7 +17,7 @@ def save_to_supabase():
         "leaderboard": st.session_state.leaderboard,
         "matches": st.session_state.matches,
         "players": st.session_state.players,
-        "fixed_teams": st.session_state.fixed_teams, # Nu gemt som liste af lister
+        "fixed_teams": st.session_state.fixed_teams,
         "history": st.session_state.history,
         "max_rounds": st.session_state.max_rounds,
         "court_names": st.session_state.court_names
@@ -54,7 +54,7 @@ if tid_raw and tid_raw != st.session_state.current_tid:
     else: st.session_state.current_tid = tid_raw
 
 if not st.session_state.current_tid:
-    st.info("👋 Indtast et ID for at starte.")
+    st.info("👋 Indtast et ID for at starte eller genoptage en turnering.")
     st.stop()
 
 # --- 3. SIDEBAR ---
@@ -64,9 +64,9 @@ with st.sidebar:
     p_type = st.selectbox("Makkere", ["Skiftende makker", "Faste hold"])
     max_r = st.number_input("Runder før finale", 1, 20, value=st.session_state.max_rounds)
     
-    c_names = []
     if g_format == "Mexicano" and st.session_state.players:
         st.subheader("🏟️ Baner")
+        c_names = []
         for i in range(len(st.session_state.players) // 4):
             val = st.session_state.court_names[i] if i < len(st.session_state.court_names) else f"Bane {i+1}"
             c_names.append(st.text_input(f"Bane {i+1}", value=val, key=f"c_n_{i}"))
@@ -93,6 +93,7 @@ with st.sidebar:
                 
             save_to_supabase()
             st.rerun()
+        else: st.error("Antal skal gå op i 4!")
 
 # --- 4. TABS ---
 tab1, tab2, tab3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log & Rediger"])
@@ -113,53 +114,42 @@ with tab1:
                     num_courts = len(st.session_state.players) // 4
                     
                     if p_type == "Faste hold":
-                        # --- NY ROBUST HOLD-LOGIK ---
-                        teams = st.session_state.fixed_teams.copy()
-                        
+                        teams = list(st.session_state.fixed_teams)
                         if is_finale or g_format == "Mexicano":
-                            # Vi beregner hold-stats for at sortere holdene samlet
                             team_stats = []
                             for t in teams:
-                                total_p = sum(st.session_state.leaderboard[p]["Point"] for p in t)
-                                total_pf = sum(st.session_state.leaderboard[p]["PF"] for p in t)
-                                total_v = sum(st.session_state.leaderboard[p]["V"] for p in t)
-                                team_stats.append({"team": t, "p": total_p, "pf": total_pf, "v": total_v})
-                            
-                            # Sorter holdene (ikke spillerne)
+                                p_sum = sum(st.session_state.leaderboard[p]["Point"] for p in t)
+                                pf_sum = sum(st.session_state.leaderboard[p]["PF"] for p in t)
+                                v_sum = sum(st.session_state.leaderboard[p]["V"] for p in t)
+                                team_stats.append({"team": t, "p": p_sum, "pf": pf_sum, "v": v_sum})
                             team_stats.sort(key=lambda x: (x['p'], x['pf'], x['v']), reverse=True)
                             sorted_teams = [x['team'] for x in team_stats]
-                            
                             for i in range(num_courts):
                                 b_navn = st.session_state.court_names[i] if i < len(st.session_state.court_names) else f"Bane {i+1}"
                                 new_m.append({"Bane": b_navn, "H1": sorted_teams[i*2], "H2": sorted_teams[i*2+1], "S1": 16, "S2": 16})
                         else:
-                            # Americano: Hold mod hold tilfældigt
                             random.shuffle(teams)
                             for i in range(num_courts):
                                 b_navn = f"Bane {i+1}"
                                 new_m.append({"Bane": b_navn, "H1": teams.pop(), "H2": teams.pop(), "S1": 16, "S2": 16})
-                    
                     else:
-                        # LOGIK FOR SKIFTENDE MAKKERE
-                        df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(["Point", "PF", "V"], ascending=False)
-                        ranked = df.index.tolist()
-                        player_pool = st.session_state.players.copy()
-                        random.shuffle(player_pool)
+                        df_sort = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index').sort_values(["Point", "PF", "V"], ascending=False)
+                        ranked = df_sort.index.tolist()
+                        pool = st.session_state.players.copy()
+                        random.shuffle(pool)
                         for i in range(num_courts):
                             b_navn = st.session_state.court_names[i] if i < len(st.session_state.court_names) else f"Bane {i+1}"
                             if is_finale or g_format == "Mexicano":
                                 p = ranked[i*4 : (i*4)+4]
                                 h1, h2 = [p[0], p[3]], [p[1], p[2]]
                             else:
-                                p = [player_pool.pop() for _ in range(4)]
+                                p = [pool.pop() for _ in range(4)]
                                 h1, h2 = [p[0], p[1]], [p[2], p[3]]
                             new_m.append({"Bane": b_navn, "H1": h1, "H2": h2, "S1": 16, "S2": 16})
                     
                     st.session_state.matches = new_m
-                    save_to_supabase()
-                    st.rerun()
+                    save_to_supabase(); st.rerun()
 
-            # Display Kampe
             for i, m in enumerate(st.session_state.matches):
                 with st.container(border=True):
                     st.write(f"### {m['Bane']}")
@@ -180,3 +170,28 @@ with tab1:
                 st.session_state.round_number += 1
                 st.session_state.matches = []
                 save_to_supabase(); st.rerun()
+
+with tab2:
+    if st.session_state.leaderboard:
+        df_v = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+        for col in ["Point", "PF", "V"]:
+            if col not in df_v.columns: df_v[col] = 0
+        df_v = df_v.sort_values(["Point", "PF", "V"], ascending=False)
+        st.subheader("📊 Aktuel Stilling")
+        st.dataframe(df_v.reset_index().rename(columns={'index':'Spiller'}), use_container_width=True)
+
+with tab3:
+    st.subheader("🔧 Manuel Redigering")
+    if st.session_state.players:
+        p_edit = st.selectbox("Vælg spiller", st.session_state.players)
+        c1, c2, c3 = st.columns(3)
+        new_p = c1.number_input("Point", value=st.session_state.leaderboard[p_edit]["Point"])
+        new_pf = c2.number_input("PF", value=st.session_state.leaderboard[p_edit]["PF"])
+        new_v = c3.number_input("V", value=st.session_state.leaderboard[p_edit]["V"])
+        if st.button("💾 Opdater"):
+            st.session_state.leaderboard[p_edit].update({"Point": new_p, "PF": new_pf, "V": new_v})
+            save_to_supabase(); st.success("Opdateret!")
+    st.divider()
+    for e in reversed(st.session_state.history):
+        with st.expander(f"Runde {e['R']}"):
+            for k in e['K']: st.write(k)
