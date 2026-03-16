@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Master Pro v5.1", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v5.2", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- INITIALISERING ---
@@ -42,6 +42,7 @@ def register_match_data(matches):
                 st.session_state.past_opponents[k] = st.session_state.past_opponents.get(k, 0) + 1
         for team, score, opp_score in [(m["H1"], m["S1"], m["S2"]), (m["H2"], m["S2"], m["S1"])]:
             for p in team:
+                if p not in st.session_state.leaderboard: st.session_state.leaderboard[p] = {"KS":0, "V":0, "U":0, "T":0, "Point":0, "PF":0}
                 s = st.session_state.leaderboard[p]
                 s["KS"] += 1; s["Point"] += score; s["PF"] += (score - opp_score)
                 if score > opp_score: s["V"] += 1
@@ -93,7 +94,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Master Pro v5.1")
+st.title("🎾 Padel Master Pro v5.2")
 tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
 if tid_raw and tid_raw != st.session_state.current_tid:
     res = conn.table("tournaments").select("*").eq("tournament_id", tid_raw).execute()
@@ -113,14 +114,15 @@ with st.sidebar:
         names = [n.strip() for n in p_input.split('\n') if n.strip()]
         if len(names) % 4 == 0: full_reset(names, g_format, p_type, max_r); save_to_supabase(); st.rerun()
 
-
-
 t1, t2, t3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log"])
 with t1:
     if st.session_state.round_number > (st.session_state.max_rounds + 1):
         st.balloons(); st.success("🏆 TURNERING AFSLUTTET!"); st.stop()
+    if st.session_state.round_number == (st.session_state.max_rounds + 1): st.warning("🔥 FINALE-RUNDE: Spillere parres efter 1+4 vs 2+3!")
+    
     if not st.session_state.matches:
         if st.button("🎲 Generer Næste Runde"): st.session_state.matches = generate_matches(); save_to_supabase(); st.rerun()
+    
     for i, m in enumerate(st.session_state.matches):
         with st.container(border=True):
             col_a, col_b, col_c = st.columns([2,1,2]); col_a.markdown(f"**Hold 1:** {', '.join(m['H1'])}"); col_b.write("vs"); col_c.markdown(f"**Hold 2:** {', '.join(m['H2'])}")
@@ -131,11 +133,18 @@ with t1:
                 if st.button("Gem", key=f"s_{i}"): st.session_state.matches[i]['H1'], st.session_state.matches[i]['H2'] = b['H1'], b['H2']; del st.session_state[f"buf_{i}"]; st.rerun()
             s1 = st.number_input(f"Score for {' & '.join(m['H1'])}", 0, 32, value=int(m['S1']), key=f"s1_{i}")
             st.session_state.matches[i]['S1'], st.session_state.matches[i]['S2'] = s1, 32-s1
+            
     if st.session_state.matches and st.button("✅ Gem Resultat & Log"):
-        register_match_data(st.session_state.matches); st.session_state.history.append({"Runde": st.session_state.round_number, "Kampe": [f"{m['Bane']}: {'&'.join(m['H1'])} vs {'&'.join(m['H2'])} ({m['S1']}-{m['S2']})" for m in st.session_state.matches]}); st.session_state.round_number += 1; st.session_state.matches = []; save_to_supabase(); st.rerun()
+        register_match_data(st.session_state.matches)
+        st.session_state.history.append({"Runde": st.session_state.round_number, "Kampe": [f"{m['Bane']}: {'&'.join(m['H1'])} vs {'&'.join(m['H2'])} ({m['S1']}-{m['S2']})" for m in st.session_state.matches]})
+        st.session_state.round_number += 1; st.session_state.matches = []
+        save_to_supabase(); st.rerun()
 
 with t2:
-    if st.session_state.leaderboard: df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index'); st.dataframe(df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
+    if st.session_state.leaderboard: 
+        df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+        st.dataframe(df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
+
 with t3:
     for e in reversed(st.session_state.history): 
         with st.expander(f"Runde {e['Runde']}"): 
