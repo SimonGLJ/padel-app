@@ -406,7 +406,7 @@ with t1:
 
             sc1, sc2 = st.columns(2)
 
-            if st.session_state.score_system == "32-point":
+if st.session_state.score_system == "32-point":
                 sc1.number_input(
                     f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=32,
@@ -418,10 +418,10 @@ with t1:
                 sc2.number_input(
                     f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
                     min_value=0, max_value=32,
-                    value=int(m["S2"]),
-                    key=f"s2_display_{i}",
+                    value=int(st.session_state.matches[i]["S2"]),
                     disabled=True,
                     help="Beregnes automatisk som 32 minus Hold 1's score"
+                )
                 )
             else:
                 s1 = sc1.number_input(
