@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Score", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v5.6", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- INITIALISERING ---
@@ -189,7 +189,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Score")
+st.title("🎾 Padel Master Pro v5.6")
 
 with st.expander("📍 Turnerings-ID — tryk for at skifte eller genoptage turnering"):
     st.write("Skriv et unikt ID for at starte en ny turnering, eller genindtast et tidligere ID for at genoptage. Samme ID på flere enheder giver fælles adgang i realtid.")
@@ -370,15 +370,13 @@ with t1:
                     key=f"s1_{i}"
                 )
                 s2 = 32 - s1
-                sc2.number_input(
-                    f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
-                    min_value=0, max_value=32,
-                    value=s2,
-                    key=f"s2_display_{i}",
-                    disabled=True
-                )
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
+                sc2.markdown(
+                    f"**🟥 Score — {m['H2'][0]} & {m['H2'][1]}**<br>"
+                    f"<div style='background-color:#f0f2f6; border-radius:8px; padding:10px 14px; font-size:1.1rem; margin-top:4px;'>{s2}</div>",
+                    unsafe_allow_html=True
+                )
             else:
                 s1 = sc1.number_input(
                     f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
