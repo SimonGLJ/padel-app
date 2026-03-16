@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Master Pro v4.8", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v4.9", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- INITIALISERING ---
@@ -19,7 +19,7 @@ def init_session_state():
 
 init_session_state()
 
-# --- OPTIMERET GENERERINGS-LOGIK ---
+# --- LOGIK & MOTORER ---
 def register_match_data(matches):
     for m in matches:
         p1_key, p2_key = tuple(sorted(m['H1'])), tuple(sorted(m['H2']))
@@ -41,7 +41,6 @@ def register_match_data(matches):
 
 def generate_matches():
     players = st.session_state.players
-    # Faste hold
     if st.session_state.partner_type == "Faste hold":
         if not st.session_state.fixed_teams:
             temp = list(players); random.shuffle(temp)
@@ -49,14 +48,12 @@ def generate_matches():
         teams = list(st.session_state.fixed_teams); random.shuffle(teams)
         return [{"Bane": f"Bane {i+1}", "H1": teams.pop(), "H2": teams.pop(), "S1": 16, "S2": 16} for i in range(len(players)//4)]
     
-    # Mexicano
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
         df['jitter'] = [random.random() for _ in range(len(df))]
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, False]).index.tolist()
         return [{"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": 16, "S2": 16} for i in range(len(players)//4)]
     
-    # Americano Monte Carlo (Nu med modstander-straff)
     best_score, best_matches = float('inf'), []
     for _ in range(1000):
         pool = list(players); random.shuffle(pool)
@@ -85,7 +82,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Master Pro v4.8")
+st.title("🎾 Padel Master Pro v4.9")
 tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
 
 if tid_raw and tid_raw != st.session_state.current_tid:
@@ -112,20 +109,26 @@ with st.sidebar:
             st.session_state.update({"players": names, "game_format": g_format, "partner_type": p_type, "max_rounds": max_r, "round_number": 1, "matches": [], "history": [], "past_partnerships": {}, "past_opponents": {}, "fixed_teams": [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type=="Faste hold" else [], "leaderboard": {n: {"KS":0, "V":0, "U":0, "T":0, "Point":0, "PF":0} for n in names}})
             save_to_supabase(); st.rerun()
 
+
+
 t1, t2, t3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log"])
 with t1:
     if st.session_state.players and st.session_state.round_number <= st.session_state.max_rounds and not st.session_state.matches:
         if st.button("🎲 Generer Næste Runde"): st.session_state.matches = generate_matches(); save_to_supabase(); st.rerun()
     for i, m in enumerate(st.session_state.matches):
         with st.container(border=True):
-            if st.button("✏️", key=f"edit_{i}"): st.session_state[f"buf_{i}"] = {"H1": list(m['H1']), "H2": list(m['H2'])}
+            col_a, col_b, col_c = st.columns([2, 1, 2])
+            col_a.markdown(f"**Hold 1:** {', '.join(m['H1'])}")
+            col_b.write("vs")
+            col_c.markdown(f"**Hold 2:** {', '.join(m['H2'])}")
+            if st.button("✏️ Rediger kamp", key=f"edit_{i}"): st.session_state[f"buf_{i}"] = {"H1": list(m['H1']), "H2": list(m['H2'])}
             if f"buf_{i}" in st.session_state:
                 b = st.session_state[f"buf_{i}"]
                 c1, c2 = st.columns(2)
                 b['H1'][0] = c1.text_input("H1 S1", b['H1'][0], key=f"e1_{i}"); b['H1'][1] = c1.text_input("H1 S2", b['H1'][1], key=f"e2_{i}")
                 b['H2'][0] = c2.text_input("H2 S1", b['H2'][0], key=f"e3_{i}"); b['H2'][1] = c2.text_input("H2 S2", b['H2'][1], key=f"e4_{i}")
                 if st.button("Gem", key=f"s_{i}"): st.session_state.matches[i]['H1'], st.session_state.matches[i]['H2'] = b['H1'], b['H2']; del st.session_state[f"buf_{i}"]; st.rerun()
-            s1 = st.number_input(f"Score: {' & '.join(m['H1'])}", 0, 32, value=int(m['S1']), key=f"s1_{i}")
+            s1 = st.number_input(f"Score for {' & '.join(m['H1'])}", 0, 32, value=int(m['S1']), key=f"s1_{i}")
             st.session_state.matches[i]['S1'], st.session_state.matches[i]['S2'] = s1, 32-s1
     if st.session_state.matches and st.button("✅ Gem Resultat & Log"):
         register_match_data(st.session_state.matches)
