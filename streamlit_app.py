@@ -381,24 +381,30 @@ with t1:
 
             if st.session_state.score_system == "32-point":
                 s1 = sc1.number_input(
-                    f"🟦 {m['H1'][0]} & {m['H1'][1]}",
+                    f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=32,
                     value=int(m["S1"]),
                     key=f"s1_{i}"
                 )
                 s2 = 32 - s1
-                sc2.metric(f"🟥 {m['H2'][0]} & {m['H2'][1]}", value=s2)
+                sc2.number_input(
+                    f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
+                    min_value=0, max_value=32,
+                    value=s2,
+                    key=f"s2_display_{i}",
+                    disabled=True
+                )
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
             else:
                 s1 = sc1.number_input(
-                    f"🟦 {m['H1'][0]} & {m['H1'][1]}",
+                    f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=999,
                     value=int(m["S1"]),
                     key=f"s1_{i}"
                 )
                 s2 = sc2.number_input(
-                    f"🟥 {m['H2'][0]} & {m['H2'][1]}",
+                    f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
                     min_value=0, max_value=999,
                     value=int(m["S2"]),
                     key=f"s2_{i}"
