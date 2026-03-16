@@ -439,12 +439,14 @@ with t1:
                     key=f"s1_{i}"
                 )
                 s2 = 32 - s1
-                st.session_state.matches[i]["S1"] = s1
-                st.session_state.matches[i]["S2"] = s2
+                if s1 != int(m["S1"]):
+                    st.session_state.matches[i]["S1"] = s1
+                    st.session_state.matches[i]["S2"] = s2
+                    st.rerun()
                 sc2.number_input(
                     f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
                     min_value=0, max_value=32,
-                    value=int(st.session_state.matches[i]["S2"]),
+                    value=s2,
                     key=f"s2_display_{i}",
                     disabled=True,
                     help="Beregnes automatisk som 32 minus Hold 1's score"
