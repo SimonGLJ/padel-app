@@ -10,29 +10,20 @@ conn = st.connection("supabase", type=SupabaseConnection)
 st.markdown("""
 <style>
     .stApp { background-color: #1e1e1e; color: #d4d4d4; }
-
     [data-testid="stSidebar"] { background-color: #252525; }
     [data-testid="stSidebar"] * { color: #d4d4d4 !important; }
-
     .stButton > button {
-        background-color: #2e2e2e;
-        color: #d4d4d4;
-        border: 1px solid #555555;
-        border-radius: 6px;
+        background-color: #2e2e2e; color: #d4d4d4;
+        border: 1px solid #555555; border-radius: 6px;
     }
     .stButton > button:hover {
-        background-color: #3a3a3a;
-        color: #ffffff;
+        background-color: #3a3a3a; color: #ffffff;
         border: 1px solid #888888;
     }
-
     .stNumberInput input, .stTextInput input, .stTextArea textarea {
-        background-color: #2a2a2a !important;
-        color: #d4d4d4 !important;
-        border: 1px solid #444444 !important;
-        border-radius: 6px !important;
+        background-color: #2a2a2a !important; color: #d4d4d4 !important;
+        border: 1px solid #444444 !important; border-radius: 6px !important;
     }
-
     .stNumberInput input:disabled {
         background-color: #333333 !important;
         color: #d4d4d4 !important;
@@ -40,35 +31,25 @@ st.markdown("""
         -webkit-text-fill-color: #d4d4d4 !important;
         opacity: 1 !important;
     }
-
     .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #2a2a2a !important;
-        color: #d4d4d4 !important;
+        background-color: #2a2a2a !important; color: #d4d4d4 !important;
         border: 1px solid #444444 !important;
     }
-
     [data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #252525 !important;
-        border: 1px solid #3a3a3a !important;
-        border-radius: 8px !important;
+        border: 1px solid #3a3a3a !important; border-radius: 8px !important;
     }
-
     [data-testid="stExpander"] {
         background-color: #252525 !important;
-        border: 1px solid #3a3a3a !important;
-        border-radius: 6px !important;
+        border: 1px solid #3a3a3a !important; border-radius: 6px !important;
     }
-
     .stTabs [data-baseweb="tab"] {
-        background-color: #252525;
-        color: #d4d4d4;
+        background-color: #252525; color: #d4d4d4;
         border-radius: 6px 6px 0 0;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #3a3a3a !important;
-        color: #ffffff !important;
+        background-color: #3a3a3a !important; color: #ffffff !important;
     }
-
     hr { border-color: #3a3a3a; }
     h1, h2, h3, h4 { color: #c8c8c8 !important; }
     p, li, label { color: #d4d4d4 !important; }
@@ -131,6 +112,11 @@ if query_tid and not st.session_state.tid_loaded:
 def p_key(a, b):
     return tuple(sorted([a, b]))
 
+def update_s2(i):
+    s1_val = st.session_state[f"s1_{i}"]
+    st.session_state.matches[i]["S1"] = s1_val
+    st.session_state.matches[i]["S2"] = 32 - s1_val
+
 def full_reset(names, g_format, p_type, max_r, score_sys):
     fixed = [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type == "Faste hold" else []
     if p_type == "Faste hold":
@@ -183,8 +169,7 @@ def generate_matches():
                 "Bane": f"Finale {i+1}",
                 "H1": [ranked[i*4], ranked[i*4+3]],
                 "H2": [ranked[i*4+1], ranked[i*4+2]],
-                "S1": default_s1,
-                "S2": default_s2
+                "S1": default_s1, "S2": default_s2
             })
         return matches
 
@@ -195,10 +180,8 @@ def generate_matches():
         for i in range(nc):
             matches.append({
                 "Bane": f"Bane {i+1}",
-                "H1": teams[i*2],
-                "H2": teams[i*2+1],
-                "S1": default_s1,
-                "S2": default_s2
+                "H1": teams[i*2], "H2": teams[i*2+1],
+                "S1": default_s1, "S2": default_s2
             })
         return matches
 
@@ -212,8 +195,7 @@ def generate_matches():
                 "Bane": f"Bane {i+1}",
                 "H1": [ranked[i*4], ranked[i*4+3]],
                 "H2": [ranked[i*4+1], ranked[i*4+2]],
-                "S1": default_s1,
-                "S2": default_s2
+                "S1": default_s1, "S2": default_s2
             })
         return matches
 
@@ -228,10 +210,8 @@ def generate_matches():
             s += st.session_state.past_opponents.get(p_key(h1[0], h2[0]), 0) * 10
             m.append({
                 "Bane": f"Bane {c+1}",
-                "H1": h1,
-                "H2": h2,
-                "S1": default_s1,
-                "S2": default_s2
+                "H1": h1, "H2": h2,
+                "S1": default_s1, "S2": default_s2
             })
         if s < best_score:
             best_score, best_matches = s, m
@@ -289,8 +269,7 @@ with st.sidebar:
         st.write("**Mexicano:** Par dannes ud fra stillingen — de bedste spiller mod de bedste.")
 
     g_format = st.selectbox(
-        "🎮 Spilformat",
-        ["Americano", "Mexicano"],
+        "🎮 Spilformat", ["Americano", "Mexicano"],
         index=0 if st.session_state.game_format == "Americano" else 1
     )
 
@@ -301,8 +280,7 @@ with st.sidebar:
         st.write("**Faste hold:** Spillerne parres to og to (linje 1+2, 3+4 osv.) og beholder samme makker hele turneringen.")
 
     p_type = st.selectbox(
-        "👥 Makkertype",
-        ["Skiftende makker", "Faste hold"],
+        "👥 Makkertype", ["Skiftende makker", "Faste hold"],
         index=0 if st.session_state.partner_type == "Skiftende makker" else 1
     )
 
@@ -313,8 +291,7 @@ with st.sidebar:
         st.write("**32-point:** Kun Hold 1's score indtastes. Hold 2 får automatisk resten, så totalen altid er 32 (f.eks. 20–12).")
 
     score_sys = st.selectbox(
-        "🔢 Pointsystem",
-        ["Frit", "32-point"],
+        "🔢 Pointsystem", ["Frit", "32-point"],
         index=0 if st.session_state.score_system == "Frit" else 1
     )
 
@@ -324,8 +301,7 @@ with st.sidebar:
         st.write("Antal runder inden finalen. Efter grundspillet afholdes automatisk én finaleruunde hvor nr. 1+4 spiller mod nr. 2+3.")
 
     max_r = st.number_input(
-        "🏁 Grundspilsrunder",
-        min_value=1, max_value=50,
+        "🏁 Grundspilsrunder", min_value=1, max_value=50,
         value=st.session_state.max_rounds
     )
 
@@ -338,8 +314,7 @@ with st.sidebar:
     p_input = st.text_area(
         "📋 Deltagere (ét navn per linje)",
         value="\n".join(st.session_state.players),
-        height=200,
-        placeholder="Anders\nBjørn\nCaroline\nDorthe"
+        height=200, placeholder="Anders\nBjørn\nCaroline\nDorthe"
     )
 
     st.markdown("---")
@@ -432,21 +407,18 @@ with t1:
             sc1, sc2 = st.columns(2)
 
             if st.session_state.score_system == "32-point":
-                s1 = sc1.number_input(
+                sc1.number_input(
                     f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=32,
                     value=int(m["S1"]),
-                    key=f"s1_{i}"
+                    key=f"s1_{i}",
+                    on_change=update_s2,
+                    args=(i,)
                 )
-                s2 = 32 - s1
-                if s1 != int(m["S1"]):
-                    st.session_state.matches[i]["S1"] = s1
-                    st.session_state.matches[i]["S2"] = s2
-                    st.rerun()
                 sc2.number_input(
                     f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
                     min_value=0, max_value=32,
-                    value=s2,
+                    value=int(m["S2"]),
                     key=f"s2_display_{i}",
                     disabled=True,
                     help="Beregnes automatisk som 32 minus Hold 1's score"
