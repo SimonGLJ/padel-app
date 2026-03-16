@@ -6,23 +6,6 @@ import random
 st.set_page_config(page_title="Padel Master Pro v5.6", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-with st.expander("🔧 Debug — Supabase test"):
-    if st.button("Test Supabase-forbindelse"):
-        try:
-            res = conn.table("tournaments").select("*").limit(1).execute()
-            st.success(f"Forbindelse OK — {len(res.data)} rækker fundet")
-            st.json(res.data)
-        except Exception as e:
-            st.error(f"Fejl: {e}")
-    
-    if st.session_state.current_tid:
-        if st.button("Test gem til Supabase nu"):
-            try:
-                save_to_supabase()
-                st.success("Gemt OK!")
-            except Exception as e:
-                st.error(f"Gem fejlede: {e}")
-
 # --- INITIALISERING ---
 def init_session_state():
     defaults = {
@@ -64,12 +47,16 @@ def load_from_data(tid, d):
         "tid_loaded": True
     })
 
-# --- AUTO-LOAD ved app-start hvis current_tid er sat men ikke loaded endnu ---
-if st.session_state.current_tid and not st.session_state.tid_loaded:
-    res = conn.table("tournaments").select("*").eq("tournament_id", st.session_state.current_tid).execute()
+# --- AUTO-LOAD via URL query param ---
+query_tid = st.query_params.get("tid", "")
+if query_tid and not st.session_state.tid_loaded:
+    res = conn.table("tournaments").select("*").eq("tournament_id", query_tid).execute()
     if res.data:
-        load_from_data(st.session_state.current_tid, res.data[0])
+        load_from_data(query_tid, res.data[0])
         st.rerun()
+    else:
+        st.session_state.current_tid = query_tid
+        st.session_state.tid_loaded = True
 
 # --- LOGIK ---
 def p_key(a, b):
@@ -123,7 +110,13 @@ def generate_matches():
         ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
         matches = []
         for i in range(nc):
-            matches.append({"Bane": f"Finale {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2})
+            matches.append({
+                "Bane": f"Finale {i+1}",
+                "H1": [ranked[i*4], ranked[i*4+3]],
+                "H2": [ranked[i*4+1], ranked[i*4+2]],
+                "S1": default_s1,
+                "S2": default_s2
+            })
         return matches
 
     if st.session_state.partner_type == "Faste hold":
@@ -131,7 +124,13 @@ def generate_matches():
         random.shuffle(teams)
         matches = []
         for i in range(nc):
-            matches.append({"Bane": f"Bane {i+1}", "H1": teams[i*2], "H2": teams[i*2+1], "S1": default_s1, "S2": default_s2})
+            matches.append({
+                "Bane": f"Bane {i+1}",
+                "H1": teams[i*2],
+                "H2": teams[i*2+1],
+                "S1": default_s1,
+                "S2": default_s2
+            })
         return matches
 
     if st.session_state.game_format == "Mexicano":
@@ -140,7 +139,13 @@ def generate_matches():
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
         matches = []
         for i in range(nc):
-            matches.append({"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2})
+            matches.append({
+                "Bane": f"Bane {i+1}",
+                "H1": [ranked[i*4], ranked[i*4+3]],
+                "H2": [ranked[i*4+1], ranked[i*4+2]],
+                "S1": default_s1,
+                "S2": default_s2
+            })
         return matches
 
     best_score, best_matches = float("inf"), []
@@ -152,7 +157,13 @@ def generate_matches():
             h1, h2 = [pool.pop(), pool.pop()], [pool.pop(), pool.pop()]
             s += st.session_state.past_partnerships.get(p_key(h1[0], h1[1]), 0) * 500
             s += st.session_state.past_opponents.get(p_key(h1[0], h2[0]), 0) * 10
-            m.append({"Bane": f"Bane {c+1}", "H1": h1, "H2": h2, "S1": default_s1, "S2": default_s2})
+            m.append({
+                "Bane": f"Bane {c+1}",
+                "H1": h1,
+                "H2": h2,
+                "S1": default_s1,
+                "S2": default_s2
+            })
         if s < best_score:
             best_score, best_matches = s, m
     return best_matches
@@ -196,7 +207,25 @@ if tid_raw and tid_raw != st.session_state.current_tid:
     else:
         st.session_state.current_tid = tid_raw
         st.session_state.tid_loaded = True
+    st.query_params["tid"] = tid_raw
     st.rerun()
+
+# --- DEBUG ---
+with st.expander("🔧 Debug — Supabase test"):
+    if st.button("Test Supabase-forbindelse"):
+        try:
+            res = conn.table("tournaments").select("*").limit(1).execute()
+            st.success(f"Forbindelse OK — {len(res.data)} rækker fundet")
+            st.json(res.data)
+        except Exception as e:
+            st.error(f"Fejl: {e}")
+    if st.session_state.current_tid:
+        if st.button("Test gem til Supabase nu"):
+            try:
+                save_to_supabase()
+                st.success("Gemt OK!")
+            except Exception as e:
+                st.error(f"Gem fejlede: {e}")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -271,6 +300,7 @@ with st.sidebar:
             full_reset(names, g_format, p_type, max_r, score_sys)
             try:
                 save_to_supabase()
+                st.success("Setup gemt!")
             except Exception as e:
                 st.error(f"Kunne ikke gemme setup: {e}")
             st.rerun()
