@@ -104,34 +104,27 @@ def generate_matches():
     if st.session_state.round_number == st.session_state.max_rounds + 1:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
-        return [
-            {"Bane": f"Finale {i+1}",
-             "H1": [ranked[i*4], ranked[i*4+3]],
-             "H2": [ranked[i*4+1], ranked[i*4+2]],
-             "S1": default_s1, "S2": default_s2}
-            for i in range(nc)
-        ]
+        matches = []
+        for i in range(nc):
+            matches.append({"Bane": f"Finale {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2})
+        return matches
 
     if st.session_state.partner_type == "Faste hold":
         teams = list(st.session_state.fixed_teams)
         random.shuffle(teams)
-        return [
-            {"Bane": f"Bane {i+1}", "H1": teams[i*2], "H2": teams[i*2+1],
-             "S1": default_s1, "S2": default_s2}
-            for i in range(nc)
-        ]
+        matches = []
+        for i in range(nc):
+            matches.append({"Bane": f"Bane {i+1}", "H1": teams[i*2], "H2": teams[i*2+1], "S1": default_s1, "S2": default_s2})
+        return matches
 
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         df["jitter"] = [random.random() for _ in range(len(df))]
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
-        return [
-            {"Bane": f"Bane {i+1}",
-             "H1": [ranked[i*4], ranked[i*4+3]],
-             "H2": [ranked[i*4+1], ranked[i*4+2]],
-             "S1": default_s1, "S2": default_s2}
-            for i in range(nc)
-        ]
+        matches = []
+        for i in range(nc):
+            matches.append({"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2})
+        return matches
 
     best_score, best_matches = float("inf"), []
     for _ in range(1000):
