@@ -422,7 +422,6 @@ if st.session_state.score_system == "32-point":
                     disabled=True,
                     help="Beregnes automatisk som 32 minus Hold 1's score"
                 )
-                )
             else:
                 s1 = sc1.number_input(
                     f"🟦 Score — {m['H1'][0]} & {m['H1'][1]}",
