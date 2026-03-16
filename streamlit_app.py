@@ -373,9 +373,11 @@ with t1:
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
                 sc2.markdown(
+                sc2.markdown(
                     f"**🟥 Score — {m['H2'][0]} & {m['H2'][1]}**<br>"
-                    f"<div style='background-color:#f0f2f6; border-radius:8px; padding:10px 14px; font-size:1.1rem; margin-top:4px;'>{s2}</div>",
+                    f"<div style='background-color:#e8e8e8; border:1px solid #cccccc; border-radius:8px; padding:10px 14px; font-size:1.1rem; margin-top:4px; color:#000000;'>{s2}</div>",
                     unsafe_allow_html=True
+                )
                 )
             else:
                 s1 = sc1.number_input(
