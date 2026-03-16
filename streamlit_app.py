@@ -9,26 +9,32 @@ conn = st.connection("supabase", type=SupabaseConnection)
 # --- INITIALISERING ---
 def init_session_state():
     defaults = {
-        "players": [], "leaderboard": {}, "round_number": 1, "matches": [], 
-        "history": [], "max_rounds": 7, "current_tid": None, 
+        "players": [], "leaderboard": {}, "round_number": 1, "matches": [],
+        "history": [], "max_rounds": 7, "current_tid": None,
         "past_partnerships": {}, "past_opponents": {},
-        "game_format": "Americano", "partner_type": "Skiftende makker", "fixed_teams": []
+        "game_format": "Americano", "partner_type": "Skiftende makker", "fixed_teams": [],
+        "score_system": "Frit"
     }
     for key, value in defaults.items():
-        if key not in st.session_state: st.session_state[key] = value
+        if key not in st.session_state:
+            st.session_state[key] = value
+
 init_session_state()
 
 # --- LOGIK ---
-def p_key(a, b): return tuple(sorted([a, b]))
+def p_key(a, b):
+    return tuple(sorted([a, b]))
 
-def full_reset(names, g_format, p_type, max_r):
+def full_reset(names, g_format, p_type, max_r, score_sys):
     fixed = [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type == "Faste hold" else []
-    if p_type == "Faste hold": random.shuffle(fixed)
+    if p_type == "Faste hold":
+        random.shuffle(fixed)
     st.session_state.update({
-        "players": names, "game_format": g_format, "partner_type": p_type, "max_rounds": max_r,
-        "round_number": 1, "matches": [], "history": [], "past_partnerships": {}, 
-        "past_opponents": {}, "fixed_teams": fixed,
-        "leaderboard": {n: {"KS":0, "V":0, "U":0, "T":0, "Point":0, "PF":0} for n in names}
+        "players": names, "game_format": g_format, "partner_type": p_type,
+        "max_rounds": max_r, "score_system": score_sys,
+        "round_number": 1, "matches": [], "history": [],
+        "past_partnerships": {}, "past_opponents": {}, "fixed_teams": fixed,
+        "leaderboard": {n: {"KS": 0, "V": 0, "U": 0, "T": 0, "Point": 0, "PF": 0} for n in names}
     })
 
 def register_match_data(matches):
@@ -42,50 +48,81 @@ def register_match_data(matches):
                 st.session_state.past_opponents[k] = st.session_state.past_opponents.get(k, 0) + 1
         for team, score, opp_score in [(m["H1"], m["S1"], m["S2"]), (m["H2"], m["S2"], m["S1"])]:
             for p in team:
-                if p not in st.session_state.leaderboard: st.session_state.leaderboard[p] = {"KS":0, "V":0, "U":0, "T":0, "Point":0, "PF":0}
+                if p not in st.session_state.leaderboard:
+                    st.session_state.leaderboard[p] = {"KS": 0, "V": 0, "U": 0, "T": 0, "Point": 0, "PF": 0}
                 s = st.session_state.leaderboard[p]
-                s["KS"] += 1; s["Point"] += score; s["PF"] += (score - opp_score)
-                if score > opp_score: s["V"] += 1
-                elif score < opp_score: s["T"] += 1
-                else: s["U"] += 1
+                s["KS"] += 1
+                s["Point"] += score
+                s["PF"] += (score - opp_score)
+                if score > opp_score:
+                    s["V"] += 1
+                elif score < opp_score:
+                    s["T"] += 1
+                else:
+                    s["U"] += 1
 
 def generate_matches():
     players = st.session_state.players
     nc = len(players) // 4
+    default_s1, default_s2 = (16, 16) if st.session_state.score_system == "32-point" else (0, 0)
+
     if st.session_state.round_number == st.session_state.max_rounds + 1:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
-        return [{"Bane": f"Finale {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": 6, "S2": 6} for i in range(nc)]
-    
+        return [
+            {"Bane": f"Finale {i+1}", "H1": [ranked[i*4], ranked[i*4+3]],
+             "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2}
+            for i in range(nc)
+        ]
+
     if st.session_state.partner_type == "Faste hold":
-        teams = list(st.session_state.fixed_teams); random.shuffle(teams)
-        return [{"Bane": f"Bane {i+1}", "H1": teams[i*2], "H2": teams[i*2+1], "S1": 6, "S2": 6} for i in range(nc)]
-    
+        teams = list(st.session_state.fixed_teams)
+        random.shuffle(teams)
+        return [
+            {"Bane": f"Bane {i+1}", "H1": teams[i*2], "H2": teams[i*2+1],
+             "S1": default_s1, "S2": default_s2}
+            for i in range(nc)
+        ]
+
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         df["jitter"] = [random.random() for _ in range(len(df))]
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
-        return [{"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]], "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": 6, "S2": 6} for i in range(nc)]
-    
+        return [
+            {"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]],
+             "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2}
+            for i in range(nc)
+        ]
+
     best_score, best_matches = float("inf"), []
     for _ in range(1000):
-        pool = list(players); random.shuffle(pool); m, s = [], 0
+        pool = list(players)
+        random.shuffle(pool)
+        m, s = [], 0
         for c in range(nc):
             h1, h2 = [pool.pop(), pool.pop()], [pool.pop(), pool.pop()]
             s += st.session_state.past_partnerships.get(p_key(h1[0], h1[1]), 0) * 500
             s += st.session_state.past_opponents.get(p_key(h1[0], h2[0]), 0) * 10
-            m.append({"Bane": f"Bane {c+1}", "H1": h1, "H2": h2, "S1": 6, "S2": 6})
-        if s < best_score: best_score, best_matches = s, m
+            m.append({"Bane": f"Bane {c+1}", "H1": h1, "H2": h2, "S1": default_s1, "S2": default_s2})
+        if s < best_score:
+            best_score, best_matches = s, m
     return best_matches
 
 def save_to_supabase():
-    if not st.session_state.current_tid: return
+    if not st.session_state.current_tid:
+        return
     payload = {
-        "tournament_id": st.session_state.current_tid, "round_number": st.session_state.round_number,
-        "leaderboard": st.session_state.leaderboard, "matches": st.session_state.matches,
-        "players": st.session_state.players, "history": st.session_state.history,
-        "max_rounds": st.session_state.max_rounds, "format": st.session_state.game_format,
-        "partner_type": st.session_state.partner_type, "fixed_teams": st.session_state.fixed_teams,
+        "tournament_id": st.session_state.current_tid,
+        "round_number": st.session_state.round_number,
+        "leaderboard": st.session_state.leaderboard,
+        "matches": st.session_state.matches,
+        "players": st.session_state.players,
+        "history": st.session_state.history,
+        "max_rounds": st.session_state.max_rounds,
+        "format": st.session_state.game_format,
+        "partner_type": st.session_state.partner_type,
+        "fixed_teams": st.session_state.fixed_teams,
+        "score_system": st.session_state.score_system,
         "past_partnerships": {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_partnerships.items()},
         "past_opponents": {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_opponents.items()}
     }
@@ -93,79 +130,190 @@ def save_to_supabase():
 
 # --- UI ---
 st.title("🎾 Padel Master Pro v5.6")
+
 tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
 if tid_raw and tid_raw != st.session_state.current_tid:
     res = conn.table("tournaments").select("*").eq("tournament_id", tid_raw).execute()
-    if res.data: 
+    if res.data:
         d = res.data[0]
-        st.session_state.update({"current_tid": tid_raw, "players": d['players'], "leaderboard": d['leaderboard'], "round_number": d['round_number'], "matches": d['matches'], "history": d['history'], "max_rounds": d['max_rounds'], "game_format": d['format'], "partner_type": d['partner_type'], "fixed_teams": d['fixed_teams']})
-    else: st.session_state.current_tid = tid_raw
+        st.session_state.update({
+            "current_tid": tid_raw,
+            "players": d["players"],
+            "leaderboard": d["leaderboard"],
+            "round_number": d["round_number"],
+            "matches": d["matches"],
+            "history": d["history"],
+            "max_rounds": d["max_rounds"],
+            "game_format": d["format"],
+            "partner_type": d["partner_type"],
+            "fixed_teams": d["fixed_teams"],
+            "score_system": d.get("score_system", "Frit"),
+            "past_partnerships": {
+                tuple(k.split("|")): v
+                for k, v in d.get("past_partnerships", {}).items()
+            },
+            "past_opponents": {
+                tuple(k.split("|")): v
+                for k, v in d.get("past_opponents", {}).items()
+            }
+        })
+    else:
+        st.session_state.current_tid = tid_raw
     st.rerun()
 
 with st.sidebar:
     st.header("⚙️ Konfiguration")
-    g_format = st.selectbox("Format", ["Americano", "Mexicano"], index=0 if st.session_state.game_format=="Americano" else 1)
-    p_type = st.selectbox("Makkere", ["Skiftende makker", "Faste hold"], index=0 if st.session_state.partner_type=="Skiftende makker" else 1)
+    g_format = st.selectbox(
+        "Format", ["Americano", "Mexicano"],
+        index=0 if st.session_state.game_format == "Americano" else 1
+    )
+    p_type = st.selectbox(
+        "Makkere", ["Skiftende makker", "Faste hold"],
+        index=0 if st.session_state.partner_type == "Skiftende makker" else 1
+    )
     max_r = st.number_input("Grundspils-runder", 1, 50, value=st.session_state.max_rounds)
-    p_input = st.text_area("Deltagere", value="\n".join(st.session_state.players), height=200)
+    score_sys = st.selectbox(
+        "Pointsystem",
+        ["Frit", "32-point"],
+        index=0 if st.session_state.score_system == "Frit" else 1,
+        help="32-point: de to holds point giver altid 32 tilsammen. Frit: indtast begge scores frit."
+    )
+    p_input = st.text_area("Deltagere (én per linje)", value="\n".join(st.session_state.players), height=200)
     if st.button("🚀 GEM SETUP / START NY"):
-        names = [n.strip() for n in p_input.split('\n') if n.strip()]
-        if len(names) % 4 == 0: 
-            full_reset(names, g_format, p_type, max_r)
-            try: save_to_supabase()
-            except Exception as e: st.error(f"Kunne ikke gemme setup: {e}")
+        names = [n.strip() for n in p_input.split("\n") if n.strip()]
+        if len(names) % 4 != 0:
+            st.error(f"Antal spillere skal være deleligt med 4. Du har {len(names)} spillere.")
+        else:
+            full_reset(names, g_format, p_type, max_r, score_sys)
+            try:
+                save_to_supabase()
+            except Exception as e:
+                st.error(f"Kunne ikke gemme setup: {e}")
             st.rerun()
 
 t1, t2, t3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log"])
+
 with t1:
     tournament_finished = st.session_state.round_number > st.session_state.max_rounds + 1
+
     if tournament_finished:
-        st.balloons(); st.success("🏆 TURNERING AFSLUTTET!"); st.markdown("### Endelig Stilling:")
-        if st.session_state.leaderboard: 
-            df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
-            st.dataframe(df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
-        if st.button("🔄 Start helt forfra"): st.session_state.clear(); st.rerun()
+        st.balloons()
+        st.success("🏆 TURNERING AFSLUTTET!")
+        st.markdown("### Endelig Stilling:")
+        if st.session_state.leaderboard:
+            df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
+            st.dataframe(
+                df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False),
+                use_container_width=True
+            )
+        if st.button("🔄 Start helt forfra"):
+            st.session_state.clear()
+            st.rerun()
         st.stop()
 
-    if st.session_state.round_number == st.session_state.max_rounds + 1: st.warning("🔥 FINALE-RUNDE: Spillere parres efter 1+4 vs 2+3!")
-    
+    if st.session_state.round_number == st.session_state.max_rounds + 1:
+        st.warning("🔥 FINALE-RUNDE: Spillere parres efter 1+4 vs 2+3!")
+
     if not st.session_state.matches:
-        if st.button("🎲 Generer Næste Runde"): 
+        if st.button("🎲 Generer Næste Runde"):
             st.session_state.matches = generate_matches()
-            try: save_to_supabase()
-            except Exception as e: st.error(f"Kunne ikke gemme: {e}")
+            try:
+                save_to_supabase()
+            except Exception as e:
+                st.error(f"Kunne ikke gemme: {e}")
             st.rerun()
-    
+
     for i, m in enumerate(st.session_state.matches):
         with st.container(border=True):
-            col_a, col_b, col_c = st.columns([2,1,2]); col_a.markdown(f"**Hold 1:** {', '.join(m['H1'])}"); col_b.write("vs"); col_c.markdown(f"**Hold 2:** {', '.join(m['H2'])}")
-            if st.button("✏️", key=f"edit_{i}"): st.session_state[f"buf_{i}"] = {"H1": list(m['H1']), "H2": list(m['H2'])}
+            col_a, col_b, col_c = st.columns([2, 1, 2])
+            col_a.markdown(f"**Hold 1:** {', '.join(m['H1'])}")
+            col_b.write("vs")
+            col_c.markdown(f"**Hold 2:** {', '.join(m['H2'])}")
+
+            if st.button("✏️", key=f"edit_{i}"):
+                st.session_state[f"buf_{i}"] = {"H1": list(m["H1"]), "H2": list(m["H2"])}
+
             if f"buf_{i}" in st.session_state:
                 b = st.session_state[f"buf_{i}"]
-                c1, c2 = st.columns(2); b['H1'][0] = c1.text_input("H1S1", b['H1'][0]); b['H1'][1] = c1.text_input("H1S2", b['H1'][1]); b['H2'][0] = c2.text_input("H2S1", b['H2'][0]); b['H2'][1] = c2.text_input("H2S2", b['H2'][1])
-                if st.button("Gem", key=f"s_{i}"): st.session_state.matches[i]['H1'], st.session_state.matches[i]['H2'] = b['H1'], b['H2']; del st.session_state[f"buf_{i}"]; st.rerun()
-            
+                c1, c2 = st.columns(2)
+                b["H1"][0] = c1.text_input("Hold 1 - Spiller 1", b["H1"][0], key=f"b_h1s1_{i}")
+                b["H1"][1] = c1.text_input("Hold 1 - Spiller 2", b["H1"][1], key=f"b_h1s2_{i}")
+                b["H2"][0] = c2.text_input("Hold 2 - Spiller 1", b["H2"][0], key=f"b_h2s1_{i}")
+                b["H2"][1] = c2.text_input("Hold 2 - Spiller 2", b["H2"][1], key=f"b_h2s2_{i}")
+                save_col, cancel_col = st.columns(2)
+                if save_col.button("💾 Gem hold", key=f"s_{i}"):
+                    if all([b["H1"][0], b["H1"][1], b["H2"][0], b["H2"][1]]):
+                        st.session_state.matches[i]["H1"] = b["H1"]
+                        st.session_state.matches[i]["H2"] = b["H2"]
+                        del st.session_state[f"buf_{i}"]
+                        st.rerun()
+                    else:
+                        st.error("Alle spillernavne skal udfyldes.")
+                if cancel_col.button("✖ Annuller", key=f"cancel_{i}"):
+                    del st.session_state[f"buf_{i}"]
+                    st.rerun()
+
             sc1, sc2 = st.columns(2)
-            st.session_state.matches[i]['S1'] = sc1.number_input(f"Score {m['H1'][0]} & {m['H1'][1]}", 0, 100, value=int(m['S1']), key=f"s1_{i}")
-            st.session_state.matches[i]['S2'] = sc2.number_input(f"Score {m['H2'][0]} & {m['H2'][1]}", 0, 100, value=int(m['S2']), key=f"s2_{i}")
-            
+
+            if st.session_state.score_system == "32-point":
+                s1 = sc1.number_input(
+                    f"Score — {m['H1'][0]} & {m['H1'][1]}",
+                    min_value=0, max_value=32,
+                    value=int(m["S1"]),
+                    key=f"s1_{i}"
+                )
+                s2 = 32 - s1
+                sc2.metric(f"Score — {m['H2'][0]} & {m['H2'][1]}", value=s2)
+                st.session_state.matches[i]["S1"] = s1
+                st.session_state.matches[i]["S2"] = s2
+            else:
+                s1 = sc1.number_input(
+                    f"Score — {m['H1'][0]} & {m['H1'][1]}",
+                    min_value=0, max_value=999,
+                    value=int(m["S1"]),
+                    key=f"s1_{i}"
+                )
+                s2 = sc2.number_input(
+                    f"Score — {m['H2'][0]} & {m['H2'][1]}",
+                    min_value=0, max_value=999,
+                    value=int(m["S2"]),
+                    key=f"s2_{i}"
+                )
+                st.session_state.matches[i]["S1"] = s1
+                st.session_state.matches[i]["S2"] = s2
+
     if st.session_state.matches and st.button("✅ Gem Resultat & Log"):
         register_match_data(st.session_state.matches)
         st.session_state.history.append({
-            "Runde": st.session_state.round_number, 
-            "Kampe": [f"{m.get('Bane', '?')}: {'&'.join(m['H1'])} vs {'&'.join(m['H2'])} ({m['S1']}-{m['S2']})" for m in st.session_state.matches]
+            "Runde": st.session_state.round_number,
+            "Kampe": [
+                f"{m.get('Bane', '?')}: {'&'.join(m['H1'])} vs {'&'.join(m['H2'])} ({m['S1']}-{m['S2']})"
+                for m in st.session_state.matches
+            ]
         })
-        st.session_state.round_number += 1; st.session_state.matches = []
-        try: save_to_supabase()
-        except Exception as e: st.error(f"Kunne ikke gemme: {e}")
+        st.session_state.round_number += 1
+        st.session_state.matches = []
+        try:
+            save_to_supabase()
+        except Exception as e:
+            st.error(f"Kunne ikke gemme: {e}")
         st.rerun()
 
 with t2:
-    if st.session_state.leaderboard: 
-        df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
-        st.dataframe(df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
+    if st.session_state.leaderboard:
+        df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
+        st.dataframe(
+            df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False),
+            use_container_width=True
+        )
+    else:
+        st.info("Ingen stilling endnu. Start en turnering i sidebaren.")
 
 with t3:
-    for e in reversed(st.session_state.history): 
-        with st.expander(f"Runde {e['Runde']}"): 
-            for k in e['Kampe']: st.write(k)
+    if st.session_state.history:
+        for e in reversed(st.session_state.history):
+            with st.expander(f"Runde {e['Runde']}"):
+                for k in e["Kampe"]:
+                    st.write(k)
+    else:
+        st.info("Ingen runder spillet endnu.")
