@@ -189,7 +189,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Master Pro v5.6")
+st.title("🎾 Padel Score")
 
 with st.expander("📍 Turnerings-ID — tryk for at skifte eller genoptage turnering"):
     st.write("Skriv et unikt ID for at starte en ny turnering, eller genindtast et tidligere ID for at genoptage. Samme ID på flere enheder giver fælles adgang i realtid.")
@@ -209,23 +209,6 @@ if tid_raw and tid_raw != st.session_state.current_tid:
         st.session_state.tid_loaded = True
     st.query_params["tid"] = tid_raw
     st.rerun()
-
-# --- DEBUG ---
-with st.expander("🔧 Debug — Supabase test"):
-    if st.button("Test Supabase-forbindelse"):
-        try:
-            res = conn.table("tournaments").select("*").limit(1).execute()
-            st.success(f"Forbindelse OK — {len(res.data)} rækker fundet")
-            st.json(res.data)
-        except Exception as e:
-            st.error(f"Fejl: {e}")
-    if st.session_state.current_tid:
-        if st.button("Test gem til Supabase nu"):
-            try:
-                save_to_supabase()
-                st.success("Gemt OK!")
-            except Exception as e:
-                st.error(f"Gem fejlede: {e}")
 
 # --- SIDEBAR ---
 with st.sidebar:
