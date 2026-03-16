@@ -118,9 +118,12 @@ def update_s2(i):
     st.session_state.matches[i]["S2"] = 32 - s1_val
 
 def full_reset(names, g_format, p_type, max_r, score_sys):
-    fixed = [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type == "Faste hold" else []
     if p_type == "Faste hold":
-        random.shuffle(fixed)
+        shuffled = list(names)
+        random.shuffle(shuffled)
+        fixed = [[shuffled[i], shuffled[i+1]] for i in range(0, len(shuffled), 2)]
+    else:
+        fixed = []
     st.session_state.update({
         "players": names, "game_format": g_format, "partner_type": p_type,
         "max_rounds": max_r, "score_system": score_sys,
@@ -277,7 +280,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er makkertype?"):
         st.write("**Skiftende makker:** Nye par dannes automatisk hver runde.")
-        st.write("**Faste hold:** Spillerne parres to og to (linje 1+2, 3+4 osv.) og beholder samme makker hele turneringen.")
+        st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen.")
 
     p_type = st.selectbox(
         "👥 Makkertype", ["Skiftende makker", "Faste hold"],
@@ -309,7 +312,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Sådan tilføjer du deltagere"):
         st.write("Skriv ét navn per linje. Antal skal være deleligt med 4 (8, 12, 16 osv.).")
-        st.write("Ved faste hold parres spillerne i den rækkefølge de er skrevet: linje 1+2 er hold 1, linje 3+4 er hold 2 osv.")
+        st.write("Ved faste hold trækkes makkerne tilfældigt — rækkefølgen du skriver navnene i har ingen betydning.")
 
     p_input = st.text_area(
         "📋 Deltagere (ét navn per linje)",
