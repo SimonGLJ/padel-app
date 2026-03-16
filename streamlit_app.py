@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Master Pro v4.6", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v4.7", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- INITIALISERING ---
@@ -19,7 +19,7 @@ def init_session_state():
 
 init_session_state()
 
-# --- CENTRAL LOGIK ---
+# --- HJÆLPEFUNKTIONER ---
 def register_match_data(matches):
     for m in matches:
         p1_key, p2_key = tuple(sorted(m['H1'])), tuple(sorted(m['H2']))
@@ -41,6 +41,7 @@ def register_match_data(matches):
 
 def generate_matches():
     players = st.session_state.players
+    # Faste hold logik
     if st.session_state.partner_type == "Faste hold":
         if not st.session_state.fixed_teams:
             temp = list(players); random.shuffle(temp)
@@ -48,6 +49,7 @@ def generate_matches():
         teams = list(st.session_state.fixed_teams); random.shuffle(teams)
         return [{"Bane": f"Bane {i+1}", "H1": teams.pop(), "H2": teams.pop(), "S1": 16, "S2": 16} for i in range(len(players)//4)]
     
+    # Mexicano logik
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
         df['jitter'] = [random.random() for _ in range(len(df))]
@@ -80,7 +82,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Master Pro v4.6")
+st.title("🎾 Padel Master Pro v4.7")
 tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
 
 if tid_raw and tid_raw != st.session_state.current_tid:
@@ -128,7 +130,12 @@ with t1:
         st.session_state.round_number += 1; st.session_state.matches = []; save_to_supabase(); st.rerun()
 
 with t2:
-    st.dataframe(pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
+    st.subheader("📊 Aktuel Stilling")
+    if st.session_state.get("leaderboard"):
+        df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient='index')
+        if not df.empty and all(c in df.columns for c in ["KS", "V", "U", "T", "Point", "PF"]):
+            st.dataframe(df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False), use_container_width=True)
+        else: st.warning("Stillingen opdateres efter første kamp.")
 
 with t3:
     for e in reversed(st.session_state.history):
