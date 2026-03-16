@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Master Pro v3.7", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v3.8", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- 1. ROTATIONS-MOTORER ---
@@ -39,9 +39,11 @@ def generate_mexicano_skiftende(leaderboard, players):
 
 def save_to_supabase():
     if not st.session_state.current_tid: return
+    # Konverter tuples til strings så JSON kan læse dem
     p_ser = {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_partnerships.items()}
     o_ser = {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_opponents.items()}
-    conn.table("tournaments").upsert({
+    
+    payload = {
         "tournament_id": st.session_state.current_tid,
         "round_number": st.session_state.round_number,
         "leaderboard": st.session_state.leaderboard,
@@ -52,8 +54,15 @@ def save_to_supabase():
         "format": st.session_state.game_format,
         "partner_type": st.session_state.partner_type,
         "fixed_teams": st.session_state.fixed_teams,
-        "past_partnerships": p_ser, "past_opponents": o_ser
-    }).execute()
+        "past_partnerships": p_ser, 
+        "past_opponents": o_ser
+    }
+    
+    try:
+        conn.table("tournaments").upsert(payload).execute()
+        st.toast("☁️ Gemt i skyen")
+    except Exception as e:
+        st.error(f"⚠️ Kunne ikke gemme til databasen. Tjek om alle kolonner findes i Supabase. Fejl: {e}")
 
 # --- 2. INITIALISERING ---
 if "current_tid" not in st.session_state:
@@ -64,59 +73,55 @@ if "current_tid" not in st.session_state:
         "game_format": "Americano", "partner_type": "Skiftende makker", "fixed_teams": []
     })
 
-st.title("🎾 Padel Master Pro v3.7")
+st.title("🎾 Padel Master Pro v3.8")
 tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
 
 if tid_raw and tid_raw != st.session_state.current_tid:
-    res = conn.table("tournaments").select("*").eq("tournament_id", tid_raw).execute()
-    if res.data:
-        d = res.data[0]
-        st.session_state.update({
-            "current_tid": tid_raw, "players": d.get('players', []),
-            "leaderboard": d.get('leaderboard', {}), "round_number": d.get('round_number', 1),
-            "matches": d.get('matches', []), "history": d.get('history', []), 
-            "max_rounds": d.get('max_rounds', 7),
-            "game_format": d.get('format', "Americano"),
-            "partner_type": d.get('partner_type', "Skiftende makker"),
-            "fixed_teams": d.get('fixed_teams', []),
-            "past_partnerships": {tuple(k.split('|')): v for k, v in d.get('past_partnerships', {}).items()},
-            "past_opponents": {tuple(k.split('|')): v for k, v in d.get('past_opponents', {}).items()}
-        })
-    else: st.session_state.current_tid = tid_raw
+    try:
+        res = conn.table("tournaments").select("*").eq("tournament_id", tid_raw).execute()
+        if res.data:
+            d = res.data[0]
+            st.session_state.update({
+                "current_tid": tid_raw, "players": d.get('players', []),
+                "leaderboard": d.get('leaderboard', {}), "round_number": d.get('round_number', 1),
+                "matches": d.get('matches', []), "history": d.get('history', []), 
+                "max_rounds": d.get('max_rounds', 7),
+                "game_format": d.get('format', "Americano"),
+                "partner_type": d.get('partner_type', "Skiftende makker"),
+                "fixed_teams": d.get('fixed_teams', []),
+                "past_partnerships": {tuple(k.split('|')): v for k, v in d.get('past_partnerships', {}).items()} if d.get('past_partnerships') else {},
+                "past_opponents": {tuple(k.split('|')): v for k, v in d.get('past_opponents', {}).items()} if d.get('past_opponents') else {}
+            })
+        else: st.session_state.current_tid = tid_raw
+    except:
+        st.session_state.current_tid = tid_raw
     st.rerun()
 
 if not st.session_state.current_tid:
     st.info("👋 Indtast ID for at starte.")
     st.stop()
 
-# --- 3. SIDEBAR (VALGMULIGHEDER GENINDFØRT) ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Konfiguration")
     g_format = st.selectbox("Format", ["Americano", "Mexicano"], index=0 if st.session_state.game_format == "Americano" else 1)
     p_type = st.selectbox("Makkere", ["Skiftende makker", "Faste hold"], index=0 if st.session_state.partner_type == "Skiftende makker" else 1)
     max_r = st.number_input("Antal runder", 1, 50, value=st.session_state.max_rounds)
-    p_input = st.text_area("Deltagere (én pr. linje)", value="\n".join(st.session_state.players), height=200)
+    p_input = st.text_area("Deltagere", value="\n".join(st.session_state.players), height=200)
     
-    if st.button("🚀 GEM & OPDATER SETUP"):
+    if st.button("🚀 GEM SETUP"):
         names = [n.strip() for n in p_input.split('\n') if n.strip()]
         if len(names) % 4 == 0:
             f_teams = []
             if p_type == "Faste hold":
                 random.shuffle(names)
                 f_teams = [names[i:i+2] for i in range(0, len(names), 2)]
-            
             st.session_state.update({
                 "players": names, "game_format": g_format, "partner_type": p_type,
                 "max_rounds": max_r, "fixed_teams": f_teams,
                 "leaderboard": {n: st.session_state.leaderboard.get(n, {"Point": 0, "PF": 0, "V": 0}) for n in names}
             })
-            save_to_supabase()
-            st.success("Setup opdateret!")
-            st.rerun()
-
-    if st.button("⚠️ Nulstil ALT"):
-        st.session_state.update({"round_number": 1, "matches": [], "history": [], "past_partnerships": {}, "past_opponents": {}})
-        save_to_supabase(); st.rerun()
+            save_to_supabase(); st.rerun()
 
 # --- 4. TABS ---
 t1, t2, t3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log"])
