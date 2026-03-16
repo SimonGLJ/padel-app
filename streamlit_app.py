@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Play", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Score", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- INITIALISERING ---
