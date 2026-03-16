@@ -6,6 +6,23 @@ import random
 st.set_page_config(page_title="Padel Master Pro v5.6", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
+with st.expander("🔧 Debug — Supabase test"):
+    if st.button("Test Supabase-forbindelse"):
+        try:
+            res = conn.table("tournaments").select("*").limit(1).execute()
+            st.success(f"Forbindelse OK — {len(res.data)} rækker fundet")
+            st.json(res.data)
+        except Exception as e:
+            st.error(f"Fejl: {e}")
+    
+    if st.session_state.current_tid:
+        if st.button("Test gem til Supabase nu"):
+            try:
+                save_to_supabase()
+                st.success("Gemt OK!")
+            except Exception as e:
+                st.error(f"Gem fejlede: {e}")
+
 # --- INITIALISERING ---
 def init_session_state():
     defaults = {
