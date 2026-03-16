@@ -12,8 +12,8 @@ def init_session_state():
         "players": [], "leaderboard": {}, "round_number": 1, "matches": [],
         "history": [], "max_rounds": 7, "current_tid": None,
         "past_partnerships": {}, "past_opponents": {},
-        "game_format": "Americano", "partner_type": "Skiftende makker", "fixed_teams": [],
-        "score_system": "Frit"
+        "game_format": "Americano", "partner_type": "Skiftende makker",
+        "fixed_teams": [], "score_system": "Frit"
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -64,14 +64,17 @@ def register_match_data(matches):
 def generate_matches():
     players = st.session_state.players
     nc = len(players) // 4
-    default_s1, default_s2 = (16, 16) if st.session_state.score_system == "32-point" else (0, 0)
+    default_s1 = 16 if st.session_state.score_system == "32-point" else 0
+    default_s2 = 16 if st.session_state.score_system == "32-point" else 0
 
     if st.session_state.round_number == st.session_state.max_rounds + 1:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
         return [
-            {"Bane": f"Finale {i+1}", "H1": [ranked[i*4], ranked[i*4+3]],
-             "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2}
+            {"Bane": f"Finale {i+1}",
+             "H1": [ranked[i*4], ranked[i*4+3]],
+             "H2": [ranked[i*4+1], ranked[i*4+2]],
+             "S1": default_s1, "S2": default_s2}
             for i in range(nc)
         ]
 
@@ -89,8 +92,10 @@ def generate_matches():
         df["jitter"] = [random.random() for _ in range(len(df))]
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
         return [
-            {"Bane": f"Bane {i+1}", "H1": [ranked[i*4], ranked[i*4+3]],
-             "H2": [ranked[i*4+1], ranked[i*4+2]], "S1": default_s1, "S2": default_s2}
+            {"Bane": f"Bane {i+1}",
+             "H1": [ranked[i*4], ranked[i*4+3]],
+             "H2": [ranked[i*4+1], ranked[i*4+2]],
+             "S1": default_s1, "S2": default_s2}
             for i in range(nc)
         ]
 
@@ -131,7 +136,8 @@ def save_to_supabase():
 # --- UI ---
 st.title("🎾 Padel Master Pro v5.6")
 
-tid_raw = st.text_input("📍 Turnerings-ID", value=st.session_state.current_tid or "").strip().lower()
+st.caption("📍 Indtast et unikt turnerings-ID for at starte eller genoptage en turnering. Samme ID på flere enheder giver adgang til den samme turnering i realtid.")
+tid_raw = st.text_input("Turnerings-ID", value=st.session_state.current_tid or "", placeholder="f.eks. fredagspadel-uge22").strip().lower()
 if tid_raw and tid_raw != st.session_state.current_tid:
     res = conn.table("tournaments").select("*").eq("tournament_id", tid_raw).execute()
     if res.data:
@@ -161,25 +167,64 @@ if tid_raw and tid_raw != st.session_state.current_tid:
         st.session_state.current_tid = tid_raw
     st.rerun()
 
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Konfiguration")
+    st.header("⚙️ Indstillinger")
+    st.markdown("---")
+
+    st.caption("🎮 **Spilformat** — Vælg hvordan holdene sammensættes hver runde.")
+    st.caption("• **Americano:** Tilfældige makkerpar hver runde, optimeret så man spiller med flest mulige.")
+    st.caption("• **Mexicano:** Holdene dannes ud fra den aktuelle stilling — de bedste spiller mod de bedste.")
     g_format = st.selectbox(
-        "Format", ["Americano", "Mexicano"],
-        index=0 if st.session_state.game_format == "Americano" else 1
+        "Spilformat",
+        ["Americano", "Mexicano"],
+        index=0 if st.session_state.game_format == "Americano" else 1,
+        label_visibility="collapsed"
     )
+
+    st.markdown("---")
+    st.caption("👥 **Makkertype** — Vælg om spillere skifter makker undervejs, eller om holdene er faste hele turneringen.")
+    st.caption("• **Skiftende makker:** Nye par dannes automatisk hver runde.")
+    st.caption("• **Faste hold:** Spillerne i deltagerlisten parres to og to (linje 1+2, 3+4 osv.) og holder samme makker hele vejen.")
     p_type = st.selectbox(
-        "Makkere", ["Skiftende makker", "Faste hold"],
-        index=0 if st.session_state.partner_type == "Skiftende makker" else 1
+        "Makkertype",
+        ["Skiftende makker", "Faste hold"],
+        index=0 if st.session_state.partner_type == "Skiftende makker" else 1,
+        label_visibility="collapsed"
     )
-    max_r = st.number_input("Grundspils-runder", 1, 50, value=st.session_state.max_rounds)
+
+    st.markdown("---")
+    st.caption("🔢 **Pointsystem** — Vælg hvordan point registreres efter hver kamp.")
+    st.caption("• **Frit:** Begge holds point indtastes manuelt — ingen begrænsning på total.")
+    st.caption("• **32-point:** Hold 1's score bestemmer alt. Hold 2 får automatisk det resterende så totalen altid er 32 (f.eks. 20–12).")
     score_sys = st.selectbox(
         "Pointsystem",
         ["Frit", "32-point"],
         index=0 if st.session_state.score_system == "Frit" else 1,
-        help="32-point: de to holds point giver altid 32 tilsammen. Frit: indtast begge scores frit."
+        label_visibility="collapsed"
     )
-    p_input = st.text_area("Deltagere (én per linje)", value="\n".join(st.session_state.players), height=200)
-    if st.button("🚀 GEM SETUP / START NY"):
+
+    st.markdown("---")
+    st.caption("🏁 **Antal grundspilsrunder** — Hvor mange runder spilles inden en eventuel finalerundes. Efter grundspillet afholdes automatisk én finaleruinde hvor nr. 1+4 spiller mod nr. 2+3.")
+    max_r = st.number_input(
+        "Grundspilsrunder",
+        min_value=1, max_value=50,
+        value=st.session_state.max_rounds,
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+    st.caption("📋 **Deltagere** — Indtast ét navn per linje. Antal spillere skal være deleligt med 4 (f.eks. 8, 12, 16). Ved faste hold parres spillerne to og to i den rækkefølge de er skrevet.")
+    p_input = st.text_area(
+        "Deltagere",
+        value="\n".join(st.session_state.players),
+        height=200,
+        placeholder="Anders\nBjørn\nCaroline\nDorthe",
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+    if st.button("🚀 GEM SETUP / START NY TURNERING", use_container_width=True):
         names = [n.strip() for n in p_input.split("\n") if n.strip()]
         if len(names) % 4 != 0:
             st.error(f"Antal spillere skal være deleligt med 4. Du har {len(names)} spillere.")
@@ -191,6 +236,7 @@ with st.sidebar:
                 st.error(f"Kunne ikke gemme setup: {e}")
             st.rerun()
 
+# --- TABS ---
 t1, t2, t3 = st.tabs(["🎾 Kampe", "📊 Stilling", "📜 Log"])
 
 with t1:
@@ -215,7 +261,8 @@ with t1:
         st.warning("🔥 FINALE-RUNDE: Spillere parres efter 1+4 vs 2+3!")
 
     if not st.session_state.matches:
-        if st.button("🎲 Generer Næste Runde"):
+        runde_label = "Finalen" if st.session_state.round_number == st.session_state.max_rounds + 1 else f"Runde {st.session_state.round_number}"
+        if st.button(f"🎲 Generer {runde_label}"):
             st.session_state.matches = generate_matches()
             try:
                 save_to_supabase()
@@ -226,20 +273,20 @@ with t1:
     for i, m in enumerate(st.session_state.matches):
         with st.container(border=True):
             col_a, col_b, col_c = st.columns([2, 1, 2])
-            col_a.markdown(f"**Hold 1:** {', '.join(m['H1'])}")
-            col_b.write("vs")
-            col_c.markdown(f"**Hold 2:** {', '.join(m['H2'])}")
+            col_a.markdown(f"**🟦 Hold 1:** {', '.join(m['H1'])}")
+            col_b.markdown("<div style='text-align:center;font-weight:bold;padding-top:6px'>vs</div>", unsafe_allow_html=True)
+            col_c.markdown(f"**🟥 Hold 2:** {', '.join(m['H2'])}")
 
-            if st.button("✏️", key=f"edit_{i}"):
+            if st.button("✏️ Rediger hold", key=f"edit_{i}"):
                 st.session_state[f"buf_{i}"] = {"H1": list(m["H1"]), "H2": list(m["H2"])}
 
             if f"buf_{i}" in st.session_state:
                 b = st.session_state[f"buf_{i}"]
                 c1, c2 = st.columns(2)
-                b["H1"][0] = c1.text_input("Hold 1 - Spiller 1", b["H1"][0], key=f"b_h1s1_{i}")
-                b["H1"][1] = c1.text_input("Hold 1 - Spiller 2", b["H1"][1], key=f"b_h1s2_{i}")
-                b["H2"][0] = c2.text_input("Hold 2 - Spiller 1", b["H2"][0], key=f"b_h2s1_{i}")
-                b["H2"][1] = c2.text_input("Hold 2 - Spiller 2", b["H2"][1], key=f"b_h2s2_{i}")
+                b["H1"][0] = c1.text_input("Hold 1 — Spiller 1", b["H1"][0], key=f"b_h1s1_{i}")
+                b["H1"][1] = c1.text_input("Hold 1 — Spiller 2", b["H1"][1], key=f"b_h1s2_{i}")
+                b["H2"][0] = c2.text_input("Hold 2 — Spiller 1", b["H2"][0], key=f"b_h2s1_{i}")
+                b["H2"][1] = c2.text_input("Hold 2 — Spiller 2", b["H2"][1], key=f"b_h2s2_{i}")
                 save_col, cancel_col = st.columns(2)
                 if save_col.button("💾 Gem hold", key=f"s_{i}"):
                     if all([b["H1"][0], b["H1"][1], b["H2"][0], b["H2"][1]]):
@@ -248,33 +295,34 @@ with t1:
                         del st.session_state[f"buf_{i}"]
                         st.rerun()
                     else:
-                        st.error("Alle spillernavne skal udfyldes.")
+                        st.error("Alle fire spillernavne skal udfyldes.")
                 if cancel_col.button("✖ Annuller", key=f"cancel_{i}"):
                     del st.session_state[f"buf_{i}"]
                     st.rerun()
 
+            st.markdown(f"**Bane:** {m.get('Bane', '?')}")
             sc1, sc2 = st.columns(2)
 
             if st.session_state.score_system == "32-point":
                 s1 = sc1.number_input(
-                    f"Score — {m['H1'][0]} & {m['H1'][1]}",
+                    f"🟦 {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=32,
                     value=int(m["S1"]),
                     key=f"s1_{i}"
                 )
                 s2 = 32 - s1
-                sc2.metric(f"Score — {m['H2'][0]} & {m['H2'][1]}", value=s2)
+                sc2.metric(f"🟥 {m['H2'][0]} & {m['H2'][1]}", value=s2)
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
             else:
                 s1 = sc1.number_input(
-                    f"Score — {m['H1'][0]} & {m['H1'][1]}",
+                    f"🟦 {m['H1'][0]} & {m['H1'][1]}",
                     min_value=0, max_value=999,
                     value=int(m["S1"]),
                     key=f"s1_{i}"
                 )
                 s2 = sc2.number_input(
-                    f"Score — {m['H2'][0]} & {m['H2'][1]}",
+                    f"🟥 {m['H2'][0]} & {m['H2'][1]}",
                     min_value=0, max_value=999,
                     value=int(m["S2"]),
                     key=f"s2_{i}"
@@ -282,7 +330,7 @@ with t1:
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
 
-    if st.session_state.matches and st.button("✅ Gem Resultat & Log"):
+    if st.session_state.matches and st.button("✅ Gem Resultat & Gå til næste runde", use_container_width=True):
         register_match_data(st.session_state.matches)
         st.session_state.history.append({
             "Runde": st.session_state.round_number,
@@ -300,16 +348,19 @@ with t1:
         st.rerun()
 
 with t2:
+    st.markdown("### 📊 Aktuel stilling")
     if st.session_state.leaderboard:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         st.dataframe(
             df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False),
             use_container_width=True
         )
+        st.caption("KS = Kampe spillet · V = Vundet · U = Uafgjort · T = Tabt · PF = Pointforskel")
     else:
         st.info("Ingen stilling endnu. Start en turnering i sidebaren.")
 
 with t3:
+    st.markdown("### 📜 Rundehistorik")
     if st.session_state.history:
         for e in reversed(st.session_state.history):
             with st.expander(f"Runde {e['Runde']}"):
