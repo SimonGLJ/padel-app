@@ -3,8 +3,98 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Score", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Master Pro v5.6", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
+
+# --- CUSTOM CSS ---
+st.markdown("""
+<style>
+    /* Baggrund og generel tekst */
+    .stApp { background-color: #1a1a2e; color: #e0e0e0; }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] { background-color: #16213e; }
+    [data-testid="stSidebar"] * { color: #e0e0e0 !important; }
+    
+    /* Knapper */
+    .stButton > button {
+        background-color: #0f3460;
+        color: #e0e0e0;
+        border: 1px solid #e94560;
+        border-radius: 8px;
+    }
+    .stButton > button:hover {
+        background-color: #e94560;
+        color: #ffffff;
+        border: 1px solid #e94560;
+    }
+
+    /* Input felter */
+    .stNumberInput input, .stTextInput input, .stTextArea textarea {
+        background-color: #16213e !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #0f3460 !important;
+        border-radius: 8px !important;
+    }
+
+    /* Disabled input */
+    .stNumberInput input:disabled {
+        background-color: #0f3460 !important;
+        color: #a0a0a0 !important;
+        border: 1px solid #e94560 !important;
+    }
+
+    /* Selectbox */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #16213e !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #0f3460 !important;
+    }
+
+    /* Container/kort */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #16213e !important;
+        border: 1px solid #0f3460 !important;
+        border-radius: 10px !important;
+    }
+
+    /* Expander */
+    [data-testid="stExpander"] {
+        background-color: #16213e !important;
+        border: 1px solid #0f3460 !important;
+        border-radius: 8px !important;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab"] {
+        background-color: #16213e;
+        color: #e0e0e0;
+        border-radius: 8px 8px 0 0;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #e94560 !important;
+        color: #ffffff !important;
+    }
+
+    /* Dataframe */
+    [data-testid="stDataFrame"] {
+        background-color: #16213e !important;
+    }
+
+    /* Success/warning/info bokse */
+    [data-testid="stAlert"] {
+        background-color: #16213e !important;
+        border-radius: 8px !important;
+    }
+
+    /* Divider */
+    hr { border-color: #0f3460; }
+
+    /* Tekst */
+    h1, h2, h3, h4 { color: #e94560 !important; }
+    p, li, label { color: #e0e0e0 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- INITIALISERING ---
 def init_session_state():
@@ -189,7 +279,7 @@ def save_to_supabase():
     conn.table("tournaments").upsert(payload).execute()
 
 # --- UI ---
-st.title("🎾 Padel Score")
+st.title("🎾 Padel Master Pro v5.6")
 
 with st.expander("📍 Turnerings-ID — tryk for at skifte eller genoptage turnering"):
     st.write("Skriv et unikt ID for at starte en ny turnering, eller genindtast et tidligere ID for at genoptage. Samme ID på flere enheder giver fælles adgang i realtid.")
@@ -372,12 +462,13 @@ with t1:
                 s2 = 32 - s1
                 st.session_state.matches[i]["S1"] = s1
                 st.session_state.matches[i]["S2"] = s2
-                sc2.markdown(
-                sc2.markdown(
-                    f"**🟥 Score — {m['H2'][0]} & {m['H2'][1]}**<br>"
-                    f"<div style='background-color:#e8e8e8; border:1px solid #cccccc; border-radius:8px; padding:10px 14px; font-size:1.1rem; margin-top:4px; color:#000000;'>{s2}</div>",
-                    unsafe_allow_html=True
-                )
+                sc2.number_input(
+                    f"🟥 Score — {m['H2'][0]} & {m['H2'][1]}",
+                    min_value=0, max_value=32,
+                    value=s2,
+                    key=f"s2_display_{i}",
+                    disabled=True,
+                    help="Beregnes automatisk som 32 minus Hold 1's score"
                 )
             else:
                 s1 = sc1.number_input(
