@@ -280,38 +280,35 @@ def generate_matches():
             })
         return matches
 
-    # --- FASTE HOLD ---
-    if st.session_state.partner_type == "Faste hold":
-        teams = list(st.session_state.fixed_teams)
-        best_score = float("inf")
-        best_order = None
-        for _ in range(5000):
-            shuffled = list(teams)
-            random.shuffle(shuffled)
-            s = 0
-            for i in range(nc):
-                t1 = shuffled[i*2]
-                t2 = shuffled[i*2+1]
-                for p1 in t1:
-                    for p2 in t2:
-                        s += st.session_state.past_opponents.get(p_key(p1, p2), 0) * 100
-            if s < best_score:
-                best_score = s
-                best_order = shuffled
-            if best_score == 0:
-                break
-        matches = []
-        for i in range(nc):
-            matches.append({
-                "Bane": f"Bane {i+1}",
-                "H1": best_order[i*2],
-                "H2": best_order[i*2+1],
-                "S1": default_s1, "S2": default_s2
-            })
-        return matches
-
-    # --- MEXICANO (med partner-gentagelses-tjek) ---
+    # --- MEXICANO ---
     if st.session_state.game_format == "Mexicano":
+
+        # Mexicano med faste hold — sorter hold som enheder efter samlede point
+        if st.session_state.partner_type == "Faste hold":
+            team_scores = []
+            for team in st.session_state.fixed_teams:
+                total = sum(
+                    st.session_state.leaderboard.get(p, {}).get("Point", 0)
+                    for p in team
+                )
+                jitter = random.random() * 0.01
+                team_scores.append((team, total + jitter))
+
+            team_scores.sort(key=lambda x: x[1], reverse=True)
+            sorted_teams = [t[0] for t in team_scores]
+
+            matches = []
+            for i in range(nc):
+                matches.append({
+                    "Bane": f"Bane {i+1}",
+                    "H1": sorted_teams[i*2],
+                    "H2": sorted_teams[i*2+1],
+                    "S1": default_s1,
+                    "S2": default_s2
+                })
+            return matches
+
+        # Mexicano med skiftende makker — sorter individuelle spillere
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         best_score = float("inf")
         best_matches = None
@@ -340,6 +337,36 @@ def generate_matches():
             if best_score == 0:
                 break
         return best_matches
+
+    # --- FASTE HOLD (Americano) ---
+    if st.session_state.partner_type == "Faste hold":
+        teams = list(st.session_state.fixed_teams)
+        best_score = float("inf")
+        best_order = None
+        for _ in range(5000):
+            shuffled = list(teams)
+            random.shuffle(shuffled)
+            s = 0
+            for i in range(nc):
+                t1 = shuffled[i*2]
+                t2 = shuffled[i*2+1]
+                for p1 in t1:
+                    for p2 in t2:
+                        s += st.session_state.past_opponents.get(p_key(p1, p2), 0) * 100
+            if s < best_score:
+                best_score = s
+                best_order = shuffled
+            if best_score == 0:
+                break
+        matches = []
+        for i in range(nc):
+            matches.append({
+                "Bane": f"Bane {i+1}",
+                "H1": best_order[i*2],
+                "H2": best_order[i*2+1],
+                "S1": default_s1, "S2": default_s2
+            })
+        return matches
 
     # --- FALLBACK ---
     best_score_val = float("inf")
@@ -427,7 +454,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er makkertype?"):
         st.write("**Skiftende makker:** Round robin algoritmen garanterer unikke makkere i alle runder (op til n-1 runder for n spillere).")
-        st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen. Algoritmen sikrer nye modstandere hver runde.")
+        st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen. I Mexicano sorteres holdene efter samlede point så de bedste hold altid møder hinanden.")
 
     p_type = st.selectbox(
         "👥 Makkertype", ["Skiftende makker", "Faste hold"],
@@ -575,7 +602,6 @@ with t1:
                                 and i < len(st.session_state.pregenerated_rounds[runde_idx])):
                             st.session_state.pregenerated_rounds[runde_idx][i]["H1"] = b["H1"]
                             st.session_state.pregenerated_rounds[runde_idx][i]["H2"] = b["H2"]
-                        # Tjek om rettelsen introducerer duplikater i fremtidige runder
                         future_rounds = st.session_state.pregenerated_rounds[runde_idx:]
                         issues = verify_no_duplicate_partners(future_rounds)
                         if issues:
