@@ -109,6 +109,32 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.current_tid = query_tid
         st.session_state.tid_loaded = True
 
+# --- VALIDERING ---
+def p_key(a, b):
+    return tuple(sorted([a, b]))
+
+def verify_no_duplicate_partners(pregenerated_rounds):
+    """
+    Tjekker at ingen spillere har samme makker to gange
+    på tværs af alle forhåndsgenererede runder.
+    Returnerer liste af problemer hvis der er nogen.
+    """
+    partnership_count = {}
+    issues = []
+    for round_idx, rnd in enumerate(pregenerated_rounds):
+        for match in rnd:
+            for pair in [match["H1"], match["H2"]]:
+                if len(pair) == 2:
+                    k = p_key(pair[0], pair[1])
+                    if k in partnership_count:
+                        issues.append(
+                            f"Runde {round_idx+1}: {pair[0]} & {pair[1]} "
+                            f"har allerede spillet sammen i runde {partnership_count[k]}"
+                        )
+                    else:
+                        partnership_count[k] = round_idx + 1
+    return issues
+
 # --- ROUND ROBIN ALGORITME ---
 def round_robin_schedule(players):
     """
@@ -145,27 +171,39 @@ def round_robin_schedule(players):
     return rounds
 
 def pregenerate_americano_rounds(players, max_rounds, score_system):
+    """
+    Genererer alle grundspils-runder på forhånd med round robin algoritme.
+    Forsøger op til 20 gange for at sikre ingen duplikerede makkere.
+    """
     default_s1 = 16 if score_system == "32-point" else 0
     default_s2 = 16 if score_system == "32-point" else 0
-    all_rounds = round_robin_schedule(players)
-    result = []
-    for rnd in all_rounds[:max_rounds]:
-        round_with_scores = []
-        for m in rnd:
-            round_with_scores.append({
-                "Bane": m["Bane"],
-                "H1": m["H1"],
-                "H2": m["H2"],
-                "S1": default_s1,
-                "S2": default_s2
-            })
-        result.append(round_with_scores)
-    return result
+
+    best_result = None
+    for attempt in range(20):
+        all_rounds = round_robin_schedule(players)
+        result = []
+        for rnd in all_rounds[:max_rounds]:
+            round_with_scores = []
+            for m in rnd:
+                round_with_scores.append({
+                    "Bane": m["Bane"],
+                    "H1": m["H1"],
+                    "H2": m["H2"],
+                    "S1": default_s1,
+                    "S2": default_s2
+                })
+            result.append(round_with_scores)
+
+        issues = verify_no_duplicate_partners(result)
+        if not issues:
+            return result, []
+        if best_result is None:
+            best_result = (result, issues)
+
+    # Returner bedste forsøg selv hvis der er issues
+    return best_result
 
 # --- LOGIK ---
-def p_key(a, b):
-    return tuple(sorted([a, b]))
-
 def update_s2(i):
     s1_val = st.session_state[f"s1_{i}"]
     st.session_state.matches[i]["S1"] = s1_val
@@ -180,8 +218,9 @@ def full_reset(names, g_format, p_type, max_r, score_sys):
         fixed = []
 
     pregenerated = []
+    gen_issues = []
     if g_format == "Americano" and p_type == "Skiftende makker":
-        pregenerated = pregenerate_americano_rounds(names, max_r, score_sys)
+        pregenerated, gen_issues = pregenerate_americano_rounds(names, max_r, score_sys)
 
     st.session_state.update({
         "players": names, "game_format": g_format, "partner_type": p_type,
@@ -191,6 +230,7 @@ def full_reset(names, g_format, p_type, max_r, score_sys):
         "tid_loaded": True, "pregenerated_rounds": pregenerated,
         "leaderboard": {n: {"KS": 0, "V": 0, "U": 0, "T": 0, "Point": 0, "PF": 0} for n in names}
     })
+    return gen_issues
 
 def register_match_data(matches):
     for m in matches:
@@ -374,7 +414,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er spilformat?"):
         st.write("**Americano:** Alle runder genereres på forhånd med en round robin algoritme der garanterer unikke makkere hver runde.")
-        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Makkere kan gentages.")
+        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Makkere kan gentages da stillingen styrer parringen.")
 
     g_format = st.selectbox(
         "🎮 Spilformat", ["Americano", "Mexicano"],
@@ -433,15 +473,22 @@ with st.sidebar:
         if len(names) % 4 != 0:
             st.error(f"Antal spillere skal være deleligt med 4. Du har {len(names)} spillere.")
         else:
-            full_reset(names, g_format, p_type, max_r, score_sys)
+            gen_issues = full_reset(names, g_format, p_type, max_r, score_sys)
             if g_format == "Americano" and p_type == "Skiftende makker":
                 antal = len(st.session_state.pregenerated_rounds)
                 max_mulige = len(names) - 1
                 if max_r > max_mulige:
-                    st.warning(f"⚠️ Med {len(names)} spillere kan der kun genereres {max_mulige} runder med unikke makkere. Runde {max_mulige + 1}–{max_r} bruger en alternativ algoritme.")
-                st.success(f"Setup gemt! {antal} runder forhåndsgenereret med unikke makkere.")
+                    st.warning(
+                        f"⚠️ Med {len(names)} spillere kan der kun genereres "
+                        f"{max_mulige} runder med unikke makkere. "
+                        f"Runde {max_mulige + 1}–{max_r} bruger en alternativ algoritme."
+                    )
+                if gen_issues:
+                    st.warning(f"⚠️ Kunne ikke garantere helt unikke makkere efter 20 forsøg. Bedste mulige skema bruges.")
+                else:
+                    st.success(f"✅ Setup gemt! {antal} runder forhåndsgenereret — alle makkere er unikke.")
             else:
-                st.success("Setup gemt!")
+                st.success("✅ Setup gemt!")
             try:
                 save_to_supabase()
             except Exception as e:
