@@ -114,11 +114,6 @@ def p_key(a, b):
     return tuple(sorted([a, b]))
 
 def verify_no_duplicate_partners(pregenerated_rounds):
-    """
-    Tjekker at ingen spillere har samme makker to gange
-    på tværs af alle forhåndsgenererede runder.
-    Returnerer liste af problemer hvis der er nogen.
-    """
     partnership_count = {}
     issues = []
     for round_idx, rnd in enumerate(pregenerated_rounds):
@@ -137,11 +132,6 @@ def verify_no_duplicate_partners(pregenerated_rounds):
 
 # --- ROUND ROBIN ALGORITME ---
 def round_robin_schedule(players):
-    """
-    Matematisk korrekt round robin med garanterede unikke makkere.
-    Fix første spiller, roter resten. For n spillere: n-1 runder.
-    Par kombineres deterministisk: par 0+1 = kamp 1, par 2+3 = kamp 2 osv.
-    """
     pool = list(players)
     random.shuffle(pool)
     n = len(pool)
@@ -171,14 +161,11 @@ def round_robin_schedule(players):
     return rounds
 
 def pregenerate_americano_rounds(players, max_rounds, score_system):
-    """
-    Genererer alle grundspils-runder på forhånd med round robin algoritme.
-    Forsøger op til 20 gange for at sikre ingen duplikerede makkere.
-    """
     default_s1 = 16 if score_system == "32-point" else 0
     default_s2 = 16 if score_system == "32-point" else 0
-
     best_result = None
+    best_issue_count = float("inf")
+
     for attempt in range(20):
         all_rounds = round_robin_schedule(players)
         result = []
@@ -197,10 +184,10 @@ def pregenerate_americano_rounds(players, max_rounds, score_system):
         issues = verify_no_duplicate_partners(result)
         if not issues:
             return result, []
-        if best_result is None:
+        if len(issues) < best_issue_count:
+            best_issue_count = len(issues)
             best_result = (result, issues)
 
-    # Returner bedste forsøg selv hvis der er issues
     return best_result
 
 # --- LOGIK ---
@@ -339,7 +326,7 @@ def generate_matches():
             })
         return matches
 
-    # --- FALLBACK: Americano uden forhåndsgenerering ---
+    # --- FALLBACK ---
     best_score_val = float("inf")
     best_matches = None
     for _ in range(5000):
@@ -414,7 +401,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er spilformat?"):
         st.write("**Americano:** Alle runder genereres på forhånd med en round robin algoritme der garanterer unikke makkere hver runde.")
-        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Makkere kan gentages da stillingen styrer parringen.")
+        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Første runde er tilfældig da ingen endnu har point. Makkere kan gentages da stillingen styrer parringen.")
 
     g_format = st.selectbox(
         "🎮 Spilformat", ["Americano", "Mexicano"],
@@ -484,7 +471,7 @@ with st.sidebar:
                         f"Runde {max_mulige + 1}–{max_r} bruger en alternativ algoritme."
                     )
                 if gen_issues:
-                    st.warning(f"⚠️ Kunne ikke garantere helt unikke makkere efter 20 forsøg. Bedste mulige skema bruges.")
+                    st.warning("⚠️ Kunne ikke garantere helt unikke makkere efter 20 forsøg. Bedste mulige skema bruges.")
                 else:
                     st.success(f"✅ Setup gemt! {antal} runder forhåndsgenereret — alle makkere er unikke.")
             else:
@@ -567,7 +554,6 @@ with t1:
                     if all([b["H1"][0], b["H1"][1], b["H2"][0], b["H2"][1]]):
                         st.session_state.matches[i]["H1"] = b["H1"]
                         st.session_state.matches[i]["H2"] = b["H2"]
-                        # Synkroniser pregenerated_rounds
                         runde_idx = st.session_state.round_number - 1
                         if (st.session_state.pregenerated_rounds
                                 and runde_idx < len(st.session_state.pregenerated_rounds)
@@ -630,7 +616,7 @@ with t1:
         try:
             save_to_supabase()
         except Exception as e:
-            st.error(f"Kunne ikke gemme: {e}")
+            st.error(f"Kunde ikke gemme: {e}")
         st.rerun()
 
 with t2:
