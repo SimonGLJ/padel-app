@@ -2,7 +2,6 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
-from itertools import combinations
 
 st.set_page_config(page_title="Padel Score", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
@@ -110,74 +109,45 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.current_tid = query_tid
         st.session_state.tid_loaded = True
 
-# --- ROUND ROBIN FORHÅNDSGENERERING ---
+# --- ROUND ROBIN ALGORITME ---
 def round_robin_schedule(players):
     """
-    Genererer et komplet round robin skema med unikke makkere.
-    Bruger rotationsalgoritme: fix første spiller, roter resten.
-    Virker for alle antal spillere deleligt med 4.
+    Matematisk korrekt round robin med garanterede unikke makkere.
+    Fix første spiller, roter resten. For n spillere: n-1 runder.
+    Par kombineres deterministisk: par 0+1 = kamp 1, par 2+3 = kamp 2 osv.
     """
-    n = len(players)
-    # Bland spillerne tilfældigt så skemaet ikke er forudsigeligt
     pool = list(players)
     random.shuffle(pool)
-
-    # Til round robin rotation: fix index 0, roter resten
-    rotating = list(range(1, n))
-    fixed = 0
+    n = len(pool)
+    fixed = pool[0]
+    rotating = pool[1:]
     rounds = []
 
     for round_idx in range(n - 1):
-        # Byg par for denne runde via rotation
-        indices = [fixed] + rotating
+        current = [fixed] + rotating
         pairs = []
         for j in range(n // 2):
-            pairs.append((indices[j], indices[n - 1 - j]))
+            pairs.append((current[j], current[n - 1 - j]))
 
-        # Kombiner par til kampe (2 par = 1 kamp)
-        random.shuffle(pairs)
         round_matches = []
-        used = set()
-        court = 1
-        for a in range(len(pairs)):
-            if a in used:
-                continue
-            for b in range(a + 1, len(pairs)):
-                if b in used:
-                    continue
-                p1, p2 = pairs[a]
-                p3, p4 = pairs[b]
-                # Alle 4 spillere skal være unikke i denne kamp
-                if len({p1, p2, p3, p4}) == 4:
-                    round_matches.append({
-                        "Bane": f"Bane {court}",
-                        "H1": [pool[p1], pool[p2]],
-                        "H2": [pool[p3], pool[p4]],
-                        "S1": 0, "S2": 0
-                    })
-                    used.add(a)
-                    used.add(b)
-                    court += 1
-                    break
-
-        if round_matches:
-            rounds.append(round_matches)
-
-        # Roter: flyt sidste element til starten af rotating
+        for c in range(n // 4):
+            h1_pair = pairs[c * 2]
+            h2_pair = pairs[c * 2 + 1]
+            round_matches.append({
+                "Bane": f"Bane {c + 1}",
+                "H1": list(h1_pair),
+                "H2": list(h2_pair),
+                "S1": 0, "S2": 0
+            })
+        rounds.append(round_matches)
         rotating = [rotating[-1]] + rotating[:-1]
 
     return rounds
 
 def pregenerate_americano_rounds(players, max_rounds, score_system):
-    """
-    Genererer alle grundspils-runder på forhånd med round robin algoritme.
-    """
     default_s1 = 16 if score_system == "32-point" else 0
     default_s2 = 16 if score_system == "32-point" else 0
-
     all_rounds = round_robin_schedule(players)
-
-    # Begræns til max_rounds og sæt korrekte default scores
     result = []
     for rnd in all_rounds[:max_rounds]:
         round_with_scores = []
@@ -190,7 +160,6 @@ def pregenerate_americano_rounds(players, max_rounds, score_system):
                 "S2": default_s2
             })
         result.append(round_with_scores)
-
     return result
 
 # --- LOGIK ---
@@ -210,7 +179,6 @@ def full_reset(names, g_format, p_type, max_r, score_sys):
     else:
         fixed = []
 
-    # Forhåndsgener runder hvis Americano med skiftende makker
     pregenerated = []
     if g_format == "Americano" and p_type == "Skiftende makker":
         pregenerated = pregenerate_americano_rounds(names, max_r, score_sys)
@@ -275,7 +243,6 @@ def generate_matches():
             and st.session_state.pregenerated_rounds
             and runde_idx < len(st.session_state.pregenerated_rounds)):
         rnd = st.session_state.pregenerated_rounds[runde_idx]
-        # Opdater scores til korrekt default (i tilfælde af score_system ændring)
         matches = []
         for m in rnd:
             matches.append({
@@ -406,8 +373,8 @@ with st.sidebar:
     st.markdown("---")
 
     with st.expander("ℹ️ Hvad er spilformat?"):
-        st.write("**Americano:** Alle runder genereres på forhånd så ingen får samme makker to gange.")
-        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste.")
+        st.write("**Americano:** Alle runder genereres på forhånd med en round robin algoritme der garanterer unikke makkere hver runde.")
+        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Makkere kan gentages.")
 
     g_format = st.selectbox(
         "🎮 Spilformat", ["Americano", "Mexicano"],
@@ -417,7 +384,7 @@ with st.sidebar:
     st.markdown("---")
 
     with st.expander("ℹ️ Hvad er makkertype?"):
-        st.write("**Skiftende makker:** Algoritmen garanterer unikke makkere hver runde i Americano.")
+        st.write("**Skiftende makker:** Round robin algoritmen garanterer unikke makkere i alle runder (op til n-1 runder for n spillere).")
         st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen. Algoritmen sikrer nye modstandere hver runde.")
 
     p_type = st.selectbox(
@@ -440,7 +407,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er grundspilsrunder?"):
         st.write("Antal runder inden finalen. Efter grundspillet afholdes automatisk én finaleruunde hvor nr. 1+4 spiller mod nr. 2+3.")
-        st.write("Ved 8 spillere anbefales 7 runder for at alle møder alle.")
+        st.write("Ved 8 spillere anbefales max 7 runder for garanterede unikke makkere i Americano.")
 
     max_r = st.number_input(
         "🏁 Grundspilsrunder", min_value=1, max_value=50,
@@ -469,6 +436,9 @@ with st.sidebar:
             full_reset(names, g_format, p_type, max_r, score_sys)
             if g_format == "Americano" and p_type == "Skiftende makker":
                 antal = len(st.session_state.pregenerated_rounds)
+                max_mulige = len(names) - 1
+                if max_r > max_mulige:
+                    st.warning(f"⚠️ Med {len(names)} spillere kan der kun genereres {max_mulige} runder med unikke makkere. Runde {max_mulige + 1}–{max_r} bruger en alternativ algoritme.")
                 st.success(f"Setup gemt! {antal} runder forhåndsgenereret med unikke makkere.")
             else:
                 st.success("Setup gemt!")
@@ -509,7 +479,6 @@ with t1:
     runde_label = "Finalen" if st.session_state.round_number == st.session_state.max_rounds + 1 else f"Runde {st.session_state.round_number}"
     st.markdown(f"#### ⏱️ Aktuel: {runde_label}")
 
-    # Vis info om forhåndsgenerering
     if (st.session_state.game_format == "Americano"
             and st.session_state.partner_type == "Skiftende makker"
             and st.session_state.pregenerated_rounds):
@@ -551,6 +520,13 @@ with t1:
                     if all([b["H1"][0], b["H1"][1], b["H2"][0], b["H2"][1]]):
                         st.session_state.matches[i]["H1"] = b["H1"]
                         st.session_state.matches[i]["H2"] = b["H2"]
+                        # Synkroniser pregenerated_rounds
+                        runde_idx = st.session_state.round_number - 1
+                        if (st.session_state.pregenerated_rounds
+                                and runde_idx < len(st.session_state.pregenerated_rounds)
+                                and i < len(st.session_state.pregenerated_rounds[runde_idx])):
+                            st.session_state.pregenerated_rounds[runde_idx][i]["H1"] = b["H1"]
+                            st.session_state.pregenerated_rounds[runde_idx][i]["H2"] = b["H2"]
                         del st.session_state[f"buf_{i}"]
                         st.rerun()
                     else:
