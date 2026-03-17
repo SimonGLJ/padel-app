@@ -144,7 +144,6 @@ def round_robin_schedule(players):
         pairs = []
         for j in range(n // 2):
             pairs.append((current[j], current[n - 1 - j]))
-
         round_matches = []
         for c in range(n // 4):
             h1_pair = pairs[c * 2]
@@ -311,20 +310,36 @@ def generate_matches():
             })
         return matches
 
-    # --- MEXICANO ---
+    # --- MEXICANO (med partner-gentagelses-tjek) ---
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
-        df["jitter"] = [random.random() for _ in range(len(df))]
-        ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
-        matches = []
-        for i in range(nc):
-            matches.append({
-                "Bane": f"Bane {i+1}",
-                "H1": [ranked[i*4], ranked[i*4+3]],
-                "H2": [ranked[i*4+1], ranked[i*4+2]],
-                "S1": default_s1, "S2": default_s2
-            })
-        return matches
+        best_score = float("inf")
+        best_matches = None
+
+        for _ in range(200):
+            df["jitter"] = [random.random() for _ in range(len(df))]
+            ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
+            matches = []
+            s = 0
+            for i in range(nc):
+                h1 = [ranked[i*4], ranked[i*4+3]]
+                h2 = [ranked[i*4+1], ranked[i*4+2]]
+                s += st.session_state.past_partnerships.get(p_key(h1[0], h1[1]), 0) * 10000
+                s += st.session_state.past_partnerships.get(p_key(h2[0], h2[1]), 0) * 10000
+                for p1 in h1:
+                    for p2 in h2:
+                        s += st.session_state.past_opponents.get(p_key(p1, p2), 0) * 100
+                matches.append({
+                    "Bane": f"Bane {i+1}",
+                    "H1": h1, "H2": h2,
+                    "S1": default_s1, "S2": default_s2
+                })
+            if s < best_score:
+                best_score = s
+                best_matches = matches
+            if best_score == 0:
+                break
+        return best_matches
 
     # --- FALLBACK ---
     best_score_val = float("inf")
@@ -401,7 +416,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er spilformat?"):
         st.write("**Americano:** Alle runder genereres på forhånd med en round robin algoritme der garanterer unikke makkere hver runde.")
-        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Første runde er tilfældig da ingen endnu har point. Makkere kan gentages da stillingen styrer parringen.")
+        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste. Første runde er tilfældig da ingen endnu har point. Algoritmen forsøger at undgå makkergentagelser, men kan ikke garantere det da stillingen styrer parringen.")
 
     g_format = st.selectbox(
         "🎮 Spilformat", ["Americano", "Mexicano"],
@@ -560,6 +575,14 @@ with t1:
                                 and i < len(st.session_state.pregenerated_rounds[runde_idx])):
                             st.session_state.pregenerated_rounds[runde_idx][i]["H1"] = b["H1"]
                             st.session_state.pregenerated_rounds[runde_idx][i]["H2"] = b["H2"]
+                        # Tjek om rettelsen introducerer duplikater i fremtidige runder
+                        future_rounds = st.session_state.pregenerated_rounds[runde_idx:]
+                        issues = verify_no_duplicate_partners(future_rounds)
+                        if issues:
+                            st.warning(
+                                f"⚠️ Denne rettelse introducerer en makker-gentagelse i en fremtidig runde: "
+                                f"{issues[0]}. Runden er opdateret men kontrollér manuelt."
+                            )
                         del st.session_state[f"buf_{i}"]
                         st.rerun()
                     else:
