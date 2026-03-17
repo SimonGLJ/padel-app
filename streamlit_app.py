@@ -616,7 +616,7 @@ with t1:
         try:
             save_to_supabase()
         except Exception as e:
-            st.error(f"Kunde ikke gemme: {e}")
+            st.error(f"Kunne ikke gemme: {e}")
         st.rerun()
 
 with t2:
