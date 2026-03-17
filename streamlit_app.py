@@ -2,6 +2,7 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
+from itertools import combinations
 
 st.set_page_config(page_title="Padel Score", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
@@ -64,7 +65,7 @@ def init_session_state():
         "past_partnerships": {}, "past_opponents": {},
         "game_format": "Americano", "partner_type": "Skiftende makker",
         "fixed_teams": [], "score_system": "Frit",
-        "tid_loaded": False
+        "tid_loaded": False, "pregenerated_rounds": []
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -86,6 +87,7 @@ def load_from_data(tid, d):
         "partner_type": d.get("partner_type", "Skiftende makker"),
         "fixed_teams": d.get("fixed_teams", []),
         "score_system": d.get("score_system", "Frit"),
+        "pregenerated_rounds": d.get("pregenerated_rounds", []),
         "past_partnerships": {
             tuple(k.split("|")): v
             for k, v in d.get("past_partnerships", {}).items()
@@ -108,6 +110,89 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.current_tid = query_tid
         st.session_state.tid_loaded = True
 
+# --- ROUND ROBIN FORHÅNDSGENERERING ---
+def round_robin_schedule(players):
+    """
+    Genererer et komplet round robin skema med unikke makkere.
+    Bruger rotationsalgoritme: fix første spiller, roter resten.
+    Virker for alle antal spillere deleligt med 4.
+    """
+    n = len(players)
+    # Bland spillerne tilfældigt så skemaet ikke er forudsigeligt
+    pool = list(players)
+    random.shuffle(pool)
+
+    # Til round robin rotation: fix index 0, roter resten
+    rotating = list(range(1, n))
+    fixed = 0
+    rounds = []
+
+    for round_idx in range(n - 1):
+        # Byg par for denne runde via rotation
+        indices = [fixed] + rotating
+        pairs = []
+        for j in range(n // 2):
+            pairs.append((indices[j], indices[n - 1 - j]))
+
+        # Kombiner par til kampe (2 par = 1 kamp)
+        random.shuffle(pairs)
+        round_matches = []
+        used = set()
+        court = 1
+        for a in range(len(pairs)):
+            if a in used:
+                continue
+            for b in range(a + 1, len(pairs)):
+                if b in used:
+                    continue
+                p1, p2 = pairs[a]
+                p3, p4 = pairs[b]
+                # Alle 4 spillere skal være unikke i denne kamp
+                if len({p1, p2, p3, p4}) == 4:
+                    round_matches.append({
+                        "Bane": f"Bane {court}",
+                        "H1": [pool[p1], pool[p2]],
+                        "H2": [pool[p3], pool[p4]],
+                        "S1": 0, "S2": 0
+                    })
+                    used.add(a)
+                    used.add(b)
+                    court += 1
+                    break
+
+        if round_matches:
+            rounds.append(round_matches)
+
+        # Roter: flyt sidste element til starten af rotating
+        rotating = [rotating[-1]] + rotating[:-1]
+
+    return rounds
+
+def pregenerate_americano_rounds(players, max_rounds, score_system):
+    """
+    Genererer alle grundspils-runder på forhånd med round robin algoritme.
+    """
+    default_s1 = 16 if score_system == "32-point" else 0
+    default_s2 = 16 if score_system == "32-point" else 0
+
+    all_rounds = round_robin_schedule(players)
+
+    # Begræns til max_rounds og sæt korrekte default scores
+    result = []
+    for rnd in all_rounds[:max_rounds]:
+        round_with_scores = []
+        for m in rnd:
+            round_with_scores.append({
+                "Bane": m["Bane"],
+                "H1": m["H1"],
+                "H2": m["H2"],
+                "S1": default_s1,
+                "S2": default_s2
+            })
+        result.append(round_with_scores)
+
+    return result
+
 # --- LOGIK ---
 def p_key(a, b):
     return tuple(sorted([a, b]))
@@ -124,12 +209,18 @@ def full_reset(names, g_format, p_type, max_r, score_sys):
         fixed = [[shuffled[i], shuffled[i+1]] for i in range(0, len(shuffled), 2)]
     else:
         fixed = []
+
+    # Forhåndsgener runder hvis Americano med skiftende makker
+    pregenerated = []
+    if g_format == "Americano" and p_type == "Skiftende makker":
+        pregenerated = pregenerate_americano_rounds(names, max_r, score_sys)
+
     st.session_state.update({
         "players": names, "game_format": g_format, "partner_type": p_type,
         "max_rounds": max_r, "score_system": score_sys,
         "round_number": 1, "matches": [], "history": [],
         "past_partnerships": {}, "past_opponents": {}, "fixed_teams": fixed,
-        "tid_loaded": True,
+        "tid_loaded": True, "pregenerated_rounds": pregenerated,
         "leaderboard": {n: {"KS": 0, "V": 0, "U": 0, "T": 0, "Point": 0, "PF": 0} for n in names}
     })
 
@@ -162,7 +253,9 @@ def generate_matches():
     nc = len(players) // 4
     default_s1 = 16 if st.session_state.score_system == "32-point" else 0
     default_s2 = 16 if st.session_state.score_system == "32-point" else 0
+    runde_idx = st.session_state.round_number - 1
 
+    # --- FINALE ---
     if st.session_state.round_number == st.session_state.max_rounds + 1:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
@@ -176,18 +269,55 @@ def generate_matches():
             })
         return matches
 
+    # --- AMERICANO MED FORHÅNDSGENEREREDE RUNDER ---
+    if (st.session_state.game_format == "Americano"
+            and st.session_state.partner_type == "Skiftende makker"
+            and st.session_state.pregenerated_rounds
+            and runde_idx < len(st.session_state.pregenerated_rounds)):
+        rnd = st.session_state.pregenerated_rounds[runde_idx]
+        # Opdater scores til korrekt default (i tilfælde af score_system ændring)
+        matches = []
+        for m in rnd:
+            matches.append({
+                "Bane": m["Bane"],
+                "H1": m["H1"],
+                "H2": m["H2"],
+                "S1": default_s1,
+                "S2": default_s2
+            })
+        return matches
+
+    # --- FASTE HOLD ---
     if st.session_state.partner_type == "Faste hold":
         teams = list(st.session_state.fixed_teams)
-        random.shuffle(teams)
+        best_score = float("inf")
+        best_order = None
+        for _ in range(5000):
+            shuffled = list(teams)
+            random.shuffle(shuffled)
+            s = 0
+            for i in range(nc):
+                t1 = shuffled[i*2]
+                t2 = shuffled[i*2+1]
+                for p1 in t1:
+                    for p2 in t2:
+                        s += st.session_state.past_opponents.get(p_key(p1, p2), 0) * 100
+            if s < best_score:
+                best_score = s
+                best_order = shuffled
+            if best_score == 0:
+                break
         matches = []
         for i in range(nc):
             matches.append({
                 "Bane": f"Bane {i+1}",
-                "H1": teams[i*2], "H2": teams[i*2+1],
+                "H1": best_order[i*2],
+                "H2": best_order[i*2+1],
                 "S1": default_s1, "S2": default_s2
             })
         return matches
 
+    # --- MEXICANO ---
     if st.session_state.game_format == "Mexicano":
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         df["jitter"] = [random.random() for _ in range(len(df))]
@@ -202,22 +332,29 @@ def generate_matches():
             })
         return matches
 
-    best_score, best_matches = float("inf"), []
-    for _ in range(1000):
+    # --- FALLBACK: Americano uden forhåndsgenerering ---
+    best_score_val = float("inf")
+    best_matches = None
+    for _ in range(5000):
         pool = list(players)
         random.shuffle(pool)
-        m, s = [], 0
+        m = []
+        s = 0
         for c in range(nc):
-            h1, h2 = [pool.pop(), pool.pop()], [pool.pop(), pool.pop()]
-            s += st.session_state.past_partnerships.get(p_key(h1[0], h1[1]), 0) * 500
-            s += st.session_state.past_opponents.get(p_key(h1[0], h2[0]), 0) * 10
-            m.append({
-                "Bane": f"Bane {c+1}",
-                "H1": h1, "H2": h2,
-                "S1": default_s1, "S2": default_s2
-            })
-        if s < best_score:
-            best_score, best_matches = s, m
+            h1 = [pool.pop(), pool.pop()]
+            h2 = [pool.pop(), pool.pop()]
+            s += st.session_state.past_partnerships.get(p_key(h1[0], h1[1]), 0) * 10000
+            s += st.session_state.past_partnerships.get(p_key(h2[0], h2[1]), 0) * 10000
+            for p1 in h1:
+                for p2 in h2:
+                    s += st.session_state.past_opponents.get(p_key(p1, p2), 0) * 100
+            m.append({"Bane": f"Bane {c+1}", "H1": h1, "H2": h2,
+                      "S1": default_s1, "S2": default_s2})
+        if s < best_score_val:
+            best_score_val = s
+            best_matches = m
+        if best_score_val == 0:
+            break
     return best_matches
 
 def save_to_supabase():
@@ -235,6 +372,7 @@ def save_to_supabase():
         "partner_type": st.session_state.partner_type,
         "fixed_teams": st.session_state.fixed_teams,
         "score_system": st.session_state.score_system,
+        "pregenerated_rounds": st.session_state.pregenerated_rounds,
         "past_partnerships": {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_partnerships.items()},
         "past_opponents": {f"{k[0]}|{k[1]}": v for k, v in st.session_state.past_opponents.items()}
     }
@@ -268,8 +406,8 @@ with st.sidebar:
     st.markdown("---")
 
     with st.expander("ℹ️ Hvad er spilformat?"):
-        st.write("**Americano:** Tilfældige makkerpar hver runde. Optimeret så alle spiller med hinanden.")
-        st.write("**Mexicano:** Par dannes ud fra stillingen — de bedste spiller mod de bedste.")
+        st.write("**Americano:** Alle runder genereres på forhånd så ingen får samme makker to gange.")
+        st.write("**Mexicano:** Par dannes dynamisk ud fra stillingen — de bedste spiller mod de bedste.")
 
     g_format = st.selectbox(
         "🎮 Spilformat", ["Americano", "Mexicano"],
@@ -279,8 +417,8 @@ with st.sidebar:
     st.markdown("---")
 
     with st.expander("ℹ️ Hvad er makkertype?"):
-        st.write("**Skiftende makker:** Nye par dannes automatisk hver runde.")
-        st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen.")
+        st.write("**Skiftende makker:** Algoritmen garanterer unikke makkere hver runde i Americano.")
+        st.write("**Faste hold:** Makkerne trækkes tilfældigt ved opstart og er faste resten af turneringen. Algoritmen sikrer nye modstandere hver runde.")
 
     p_type = st.selectbox(
         "👥 Makkertype", ["Skiftende makker", "Faste hold"],
@@ -302,6 +440,7 @@ with st.sidebar:
 
     with st.expander("ℹ️ Hvad er grundspilsrunder?"):
         st.write("Antal runder inden finalen. Efter grundspillet afholdes automatisk én finaleruunde hvor nr. 1+4 spiller mod nr. 2+3.")
+        st.write("Ved 8 spillere anbefales 7 runder for at alle møder alle.")
 
     max_r = st.number_input(
         "🏁 Grundspilsrunder", min_value=1, max_value=50,
@@ -328,9 +467,13 @@ with st.sidebar:
             st.error(f"Antal spillere skal være deleligt med 4. Du har {len(names)} spillere.")
         else:
             full_reset(names, g_format, p_type, max_r, score_sys)
+            if g_format == "Americano" and p_type == "Skiftende makker":
+                antal = len(st.session_state.pregenerated_rounds)
+                st.success(f"Setup gemt! {antal} runder forhåndsgenereret med unikke makkere.")
+            else:
+                st.success("Setup gemt!")
             try:
                 save_to_supabase()
-                st.success("Setup gemt!")
             except Exception as e:
                 st.error(f"Kunne ikke gemme setup: {e}")
             st.rerun()
@@ -365,6 +508,15 @@ with t1:
 
     runde_label = "Finalen" if st.session_state.round_number == st.session_state.max_rounds + 1 else f"Runde {st.session_state.round_number}"
     st.markdown(f"#### ⏱️ Aktuel: {runde_label}")
+
+    # Vis info om forhåndsgenerering
+    if (st.session_state.game_format == "Americano"
+            and st.session_state.partner_type == "Skiftende makker"
+            and st.session_state.pregenerated_rounds):
+        total = len(st.session_state.pregenerated_rounds)
+        current = st.session_state.round_number
+        if current <= total:
+            st.caption(f"📋 Forhåndsgenereret turnering — Runde {current} af {total}")
 
     if not st.session_state.matches:
         if st.button(f"🎲 Generer {runde_label}", use_container_width=True):
