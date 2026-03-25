@@ -72,6 +72,18 @@ def init_session_state():
 
 init_session_state()
 
+# --- HJÆLPEFUNKTION: Konsistent sortering overalt ---
+# Rækkefølge: Point > V > PF > U > Alfabetisk
+def sort_leaderboard(df):
+    df = df.copy()
+    df["_navn"] = df.index
+    df = df.sort_values(
+        by=["Point", "V", "PF", "U", "_navn"],
+        ascending=[False, False, False, False, True]
+    )
+    df.drop(columns=["_navn"], inplace=True)
+    return df
+
 # --- HJÆLPEFUNKTION: Load fra Supabase-data ---
 def load_from_data(tid, d):
     st.session_state.update({
@@ -252,7 +264,7 @@ def generate_matches():
     # --- FINALE ---
     if st.session_state.round_number == st.session_state.max_rounds + 1:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
-        ranked = df.sort_values(by=["Point", "V", "PF"], ascending=[False, False, False]).index.tolist()
+        ranked = sort_leaderboard(df).index.tolist()
         matches = []
         for i in range(nc):
             matches.append({
@@ -291,10 +303,14 @@ def generate_matches():
                     st.session_state.leaderboard.get(p, {}).get("Point", 0)
                     for p in team
                 )
-                jitter = random.random() * 0.01
-                team_scores.append((team, total + jitter))
+                # Tiebreak for hold: brug samme rækkefølge Point > V > PF > U > alfabetisk
+                total_v  = sum(st.session_state.leaderboard.get(p, {}).get("V",  0) for p in team)
+                total_pf = sum(st.session_state.leaderboard.get(p, {}).get("PF", 0) for p in team)
+                total_u  = sum(st.session_state.leaderboard.get(p, {}).get("U",  0) for p in team)
+                navn = "&".join(sorted(team))
+                team_scores.append((team, total, total_v, total_pf, total_u, navn))
 
-            team_scores.sort(key=lambda x: x[1], reverse=True)
+            team_scores.sort(key=lambda x: (-x[1], -x[2], -x[3], -x[4], x[5]))
             sorted_teams = [t[0] for t in team_scores]
 
             matches = []
@@ -309,13 +325,18 @@ def generate_matches():
             return matches
 
         # Mexicano med skiftende makker — sorter individuelle spillere
+        # Primær sortering: Point > V > PF > U > alfabetisk (jitter kun til makker-optimering)
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         best_score = float("inf")
         best_matches = None
 
         for _ in range(200):
-            df["jitter"] = [random.random() for _ in range(len(df))]
-            ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
+            df["_jitter"] = [random.random() * 0.0001 for _ in range(len(df))]
+            df["_navn"] = df.index
+            ranked = df.sort_values(
+                by=["Point", "V", "PF", "U", "_navn", "_jitter"],
+                ascending=[False, False, False, False, True, True]
+            ).index.tolist()
             matches = []
             s = 0
             for i in range(nc):
@@ -541,7 +562,7 @@ with t1:
         if st.session_state.leaderboard:
             df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
             st.dataframe(
-                df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False),
+                sort_leaderboard(df)[["KS", "V", "U", "T", "Point", "PF"]],
                 use_container_width=True
             )
         if st.button("🔄 Start helt forfra"):
@@ -673,7 +694,7 @@ with t2:
     if st.session_state.leaderboard:
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         st.dataframe(
-            df[["KS", "V", "U", "T", "Point", "PF"]].sort_values(["Point", "V"], ascending=False),
+            sort_leaderboard(df)[["KS", "V", "U", "T", "Point", "PF"]],
             use_container_width=True
         )
         st.caption("KS = Kampe spillet · V = Vundet · U = Uafgjort · T = Tabt · PF = Pointforskel")
