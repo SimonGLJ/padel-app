@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Score v6.3", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Score v6.4", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- CUSTOM CSS ---
@@ -75,6 +75,16 @@ init_session_state()
 # --- HJÆLPEFUNKTIONER ---
 def p_key(a, b):
     return tuple(sorted([a, b]))
+
+def get_group_key(players_4):
+    """Returnerer en unik, sorteret nøgle for en 4-mands gruppe."""
+    return tuple(sorted(players_4))
+
+def match_config_key(h1, h2):
+    """Returnerer en unik nøgle for en specifik kampopstilling uanset holdorden."""
+    t1 = tuple(sorted(h1))
+    t2 = tuple(sorted(h2))
+    return tuple(sorted([t1, t2]))
 
 def recalculate_leaderboard_and_stats():
     """Genberegner leaderboard, partner- og modstander-statistik helt fra grunden ud fra history."""
@@ -200,12 +210,45 @@ def generate_matches():
         df = pd.DataFrame.from_dict(st.session_state.leaderboard, orient="index")
         df["jitter"] = [random.random() for _ in range(len(df))]
         ranked = df.sort_values(by=["Point", "jitter"], ascending=[False, True]).index.tolist()
+        
+        # Kortlæg tidligere spillede opstillinger for 4-mands grupper
+        past_group_configs = {}
+        for entry in st.session_state.history:
+            for m in entry.get("Kampe_raw", []):
+                g_players = m["H1"] + m["H2"]
+                if len(g_players) == 4:
+                    g_key = get_group_key(g_players)
+                    c_key = match_config_key(m["H1"], m["H2"])
+                    if g_key not in past_group_configs:
+                        past_group_configs[g_key] = set()
+                    past_group_configs[g_key].add(c_key)
+
         matches = []
         for i in range(nc):
+            p1, p2, p3, p4 = ranked[i*4], ranked[i*4+1], ranked[i*4+2], ranked[i*4+3]
+            group_key = get_group_key([p1, p2, p3, p4])
+            played_configs = past_group_configs.get(group_key, set())
+
+            # De 3 mulige konfigurationer for denne 4-mands gruppe:
+            # Opt A (Standard Mexicano): 1+4 vs 2+3
+            # Opt B (Alternativ 1):       1+3 vs 2+4
+            # Opt C (Alternativ 2):       1+2 vs 3+4
+            opt_A = ([p1, p4], [p2, p3])
+            opt_B = ([p1, p3], [p2, p4])
+            opt_C = ([p1, p2], [p3, p4])
+
+            chosen_h1, chosen_h2 = opt_A[0], opt_A[1]
+
+            # Hvis A allerede er spillet af denne præcise gruppe, roterer vi
+            if match_config_key(opt_A[0], opt_A[1]) in played_configs:
+                if match_config_key(opt_B[0], opt_B[1]) not in played_configs:
+                    chosen_h1, chosen_h2 = opt_B[0], opt_B[1]
+                elif match_config_key(opt_C[0], opt_C[1]) not in played_configs:
+                    chosen_h1, chosen_h2 = opt_C[0], opt_C[1]
+
             matches.append({
                 "Bane": f"Bane {i+1}",
-                "H1": [ranked[i*4], ranked[i*4+3]],
-                "H2": [ranked[i*4+1], ranked[i*4+2]],
+                "H1": chosen_h1, "H2": chosen_h2,
                 "S1": default_s1, "S2": default_s2
             })
         return matches
@@ -260,7 +303,7 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.tid_loaded = True
 
 # --- UI ---
-st.title("🎾 Padel Score v6.3")
+st.title("🎾 Padel Score v6.4")
 
 # Vis korrektionskvittering hvis der lige er blevet gemt en ændring
 if st.session_state.show_correction_msg:
@@ -473,7 +516,6 @@ with t3:
         for r_idx, e in enumerate(reversed(st.session_state.history)):
             real_r_idx = len(st.session_state.history) - 1 - r_idx
             
-            # Tilføj [Korrigeret] tag i overskriften hvis runden har været ændret
             is_edited = e.get("edited", False)
             tag = " ✏️ (Korrigeret)" if is_edited else ""
             
