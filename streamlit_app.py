@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Score v6.0", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Score v6.2", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- CUSTOM CSS ---
@@ -85,7 +85,7 @@ def recalculate_leaderboard_and_stats():
 
     for entry in st.session_state.history:
         for m in entry.get("Kampe_raw", []):
-            h1, h2, s1, s2 = m["H1"], m["H2"], m["S1"], m["S2"]
+            h1, h2, s1, s2 = m["H1"], m["H2"], int(m["S1"]), int(m["S2"])
             
             # Opdater partnerskaber
             for pair in [h1, h2]:
@@ -146,11 +146,6 @@ def update_s2(i):
     s1_val = st.session_state[f"s1_{i}"]
     st.session_state.matches[i]["S1"] = s1_val
     st.session_state.matches[i]["S2"] = 32 - s1_val
-
-def update_hist_s2(r_idx, m_idx):
-    s1_val = st.session_state[f"hist_s1_{r_idx}_{m_idx}"]
-    st.session_state.history[r_idx]["Kampe_raw"][m_idx]["S1"] = s1_val
-    st.session_state.history[r_idx]["Kampe_raw"][m_idx]["S2"] = 32 - s1_val
 
 def full_reset(names, g_format, p_type, max_r, score_sys):
     fixed = [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type == "Faste hold" else []
@@ -260,7 +255,7 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.tid_loaded = True
 
 # --- UI ---
-st.title("🎾 Padel Score v6.0")
+st.title("🎾 Padel Score v6.2")
 
 with st.expander("📍 Turnerings-ID — tryk for at skifte eller genoptage turnering"):
     st.write("Skriv et unikt ID for at starte en ny turnering, eller genindtast et tidligere ID for at genoptage.")
@@ -469,28 +464,29 @@ with t3:
             real_r_idx = len(st.session_state.history) - 1 - r_idx
             with st.expander(f"Runde {e['Runde']}"):
                 
-                # Check om der bruges ny struktur med 'Kampe_raw' eller gammel 'Kampe'
                 if "Kampe_raw" in e:
                     for m_idx, m in enumerate(e["Kampe_raw"]):
                         st.markdown(f"**📍 {m.get('Bane', '?')}** — {', '.join(m['H1'])} vs {', '.join(m['H2'])}")
                         
                         col1, col2 = st.columns(2)
                         if st.session_state.score_system == "32-point":
-                            col1.number_input(
+                            new_s1 = col1.number_input(
                                 f"Score Hold 1 ({'&'.join(m['H1'])})",
                                 min_value=0, max_value=32,
                                 value=int(m["S1"]),
-                                key=f"hist_s1_{real_r_idx}_{m_idx}",
-                                on_change=update_hist_s2,
-                                args=(real_r_idx, m_idx)
+                                key=f"hist_s1_{real_r_idx}_{m_idx}"
                             )
+                            new_s2 = 32 - new_s1
                             col2.number_input(
                                 f"Score Hold 2 ({'&'.join(m['H2'])})",
                                 min_value=0, max_value=32,
-                                value=int(m["S2"]),
+                                value=new_s2,
                                 disabled=True,
-                                key=f"hist_s2_{real_r_idx}_{m_idx}"
+                                key=f"hist_s2_dis_{real_r_idx}_{m_idx}",
+                                help="Beregnes automatisk som 32 minus Hold 1's score"
                             )
+                            m["S1"] = new_s1
+                            m["S2"] = new_s2
                         else:
                             ns1 = col1.number_input(
                                 f"Score Hold 1 ({'&'.join(m['H1'])})",
@@ -517,7 +513,6 @@ with t3:
                             st.error(f"Kunne ikke gemme: {e}")
                         st.rerun()
                 else:
-                    # Legacy-visning for ældre runder
                     for k in e.get("Kampe", []):
                         st.write(k)
     else:
