@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Padel Score v6.2", layout="wide", page_icon="🎾")
+st.set_page_config(page_title="Padel Score v6.3", layout="wide", page_icon="🎾")
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # --- CUSTOM CSS ---
@@ -64,7 +64,7 @@ def init_session_state():
         "past_partnerships": {}, "past_opponents": {},
         "game_format": "Americano", "partner_type": "Skiftende makker",
         "fixed_teams": [], "score_system": "Frit",
-        "tid_loaded": False
+        "tid_loaded": False, "show_correction_msg": None
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -147,6 +147,11 @@ def update_s2(i):
     st.session_state.matches[i]["S1"] = s1_val
     st.session_state.matches[i]["S2"] = 32 - s1_val
 
+def update_hist_s2(real_r_idx, m_idx):
+    s1_val = st.session_state[f"hist_s1_{real_r_idx}_{m_idx}"]
+    st.session_state.history[real_r_idx]["Kampe_raw"][m_idx]["S1"] = s1_val
+    st.session_state.history[real_r_idx]["Kampe_raw"][m_idx]["S2"] = 32 - s1_val
+
 def full_reset(names, g_format, p_type, max_r, score_sys):
     fixed = [[names[i], names[i+1]] for i in range(0, len(names), 2)] if p_type == "Faste hold" else []
     if p_type == "Faste hold":
@@ -156,7 +161,7 @@ def full_reset(names, g_format, p_type, max_r, score_sys):
         "max_rounds": max_r, "score_system": score_sys,
         "round_number": 1, "matches": [], "history": [],
         "past_partnerships": {}, "past_opponents": {}, "fixed_teams": fixed,
-        "tid_loaded": True,
+        "tid_loaded": True, "show_correction_msg": None,
         "leaderboard": {n: {"KS": 0, "V": 0, "U": 0, "T": 0, "Point": 0, "PF": 0} for n in names}
     })
 
@@ -255,7 +260,12 @@ if query_tid and not st.session_state.tid_loaded:
         st.session_state.tid_loaded = True
 
 # --- UI ---
-st.title("🎾 Padel Score v6.2")
+st.title("🎾 Padel Score v6.3")
+
+# Vis korrektionskvittering hvis der lige er blevet gemt en ændring
+if st.session_state.show_correction_msg:
+    st.success(f"✅ {st.session_state.show_correction_msg}")
+    st.session_state.show_correction_msg = None
 
 with st.expander("📍 Turnerings-ID — tryk for at skifte eller genoptage turnering"):
     st.write("Skriv et unikt ID for at starte en ny turnering, eller genindtast et tidligere ID for at genoptage.")
@@ -462,7 +472,12 @@ with t3:
     if st.session_state.history:
         for r_idx, e in enumerate(reversed(st.session_state.history)):
             real_r_idx = len(st.session_state.history) - 1 - r_idx
-            with st.expander(f"Runde {e['Runde']}"):
+            
+            # Tilføj [Korrigeret] tag i overskriften hvis runden har været ændret
+            is_edited = e.get("edited", False)
+            tag = " ✏️ (Korrigeret)" if is_edited else ""
+            
+            with st.expander(f"Runde {e['Runde']}{tag}"):
                 
                 if "Kampe_raw" in e:
                     for m_idx, m in enumerate(e["Kampe_raw"]):
@@ -470,23 +485,21 @@ with t3:
                         
                         col1, col2 = st.columns(2)
                         if st.session_state.score_system == "32-point":
-                            new_s1 = col1.number_input(
+                            col1.number_input(
                                 f"Score Hold 1 ({'&'.join(m['H1'])})",
                                 min_value=0, max_value=32,
                                 value=int(m["S1"]),
-                                key=f"hist_s1_{real_r_idx}_{m_idx}"
+                                key=f"hist_s1_{real_r_idx}_{m_idx}",
+                                on_change=update_hist_s2,
+                                args=(real_r_idx, m_idx)
                             )
-                            new_s2 = 32 - new_s1
                             col2.number_input(
                                 f"Score Hold 2 ({'&'.join(m['H2'])})",
                                 min_value=0, max_value=32,
-                                value=new_s2,
+                                value=int(m["S2"]),
                                 disabled=True,
-                                key=f"hist_s2_dis_{real_r_idx}_{m_idx}",
                                 help="Beregnes automatisk som 32 minus Hold 1's score"
                             )
-                            m["S1"] = new_s1
-                            m["S2"] = new_s2
                         else:
                             ns1 = col1.number_input(
                                 f"Score Hold 1 ({'&'.join(m['H1'])})",
@@ -504,13 +517,14 @@ with t3:
                             m["S2"] = ns2
                         st.markdown("---")
                     
-                    if st.button(f"💾 Gem korrektion for Runde {e['Runde']}", key=f"save_hist_{real_r_idx}"):
+                    if st.button(f"💾 Gem korrektion for Runde {e['Runde']}", key=f"save_hist_{real_r_idx}", use_container_width=True):
+                        e["edited"] = True
                         recalculate_leaderboard_and_stats()
                         try:
                             save_to_supabase()
-                            st.success("Tidligere runde korrigeret og stilling genberegnet!")
+                            st.session_state.show_correction_msg = f"Runde {e['Runde']} blev korrigeret og gemt! Leaderboardet er opdateret."
                         except Exception as e:
-                            st.error(f"Kunne ikke gemme: {e}")
+                            st.error(f"Kunne ikke gemme til databasen: {e}")
                         st.rerun()
                 else:
                     for k in e.get("Kampe", []):
